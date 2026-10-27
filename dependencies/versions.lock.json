@@ -31,7 +31,7 @@
   "clangFormat": "20.1.8",
   "lockMechanism": "This file plus the Qt online-installer kit named above. vcpkg is not used in M0 because Qt 6.12.0 is already supplied by the official installer and a from-source Qt build is not required.",
   "planned": {
-    "vtk": "9.4",
+    "vtk": "9.4.2",
     "itk": "5.4",
     "dcmtk": "3.6.9",
     "opencascade": "7.9",

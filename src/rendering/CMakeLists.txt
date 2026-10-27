@@ -1,4 +1,7 @@
-add_library(medforge_rendering STATIC src/Module.cpp)
+add_library(medforge_rendering STATIC
+    src/CameraPose.cpp
+    src/Module.cpp
+)
 add_library(medforge::rendering ALIAS medforge_rendering)
 target_include_directories(medforge_rendering PUBLIC include)
 target_link_libraries(medforge_rendering PUBLIC medforge::core)

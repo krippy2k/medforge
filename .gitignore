@@ -1,5 +1,8 @@
 build/
 out/
+third_party/src/
+third_party/build/
+third_party/dist/
 CMakeUserPresets.json
 CMakeCache.txt
 CMakeFiles/
