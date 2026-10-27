@@ -1,0 +1,13 @@
+---
+description: MedForge Qt workstation design system and visual quality
+alwaysApply: true
+---
+
+# Workstation UI design contract
+- Treat `DESIGN_SYSTEM.md` as the visual source of truth. Design new UI states before coding; reuse tokens, components, layouts, and icons.
+- Build a compact professional medical imaging/CAD workstation with Qt Widgets and VTK; avoid dashboard-like cards, excessive whitespace, emoji controls, or inconsistent one-off styling.
+- Include empty/loading/progress/error/disabled/selected/focus states; implement accessible labels, keyboard actions, and visible focus.
+- Validate at 1280x800, 1920x1080, and 2560x1440 when display automation supports them; test DPI scaling at 100% and 150% where possible. Dock layouts must persist and recover safely.
+- For each new or changed screen: run GUI smoke tests, capture named screenshots for representative states, inspect them (using an image-capable tool or explicit human review), fix clipped text, poor contrast, overlaps, and unusable affordances. Screenshot capture alone is not inspection.
+- When GUI capture or visual inspection is unavailable, report it as NOT VERIFIED and provide precise manual steps. Never fabricate visual QA.
+- Do not mark a UI milestone complete with dead controls, placeholder actions disguised as working functionality, or known critical layout issues.

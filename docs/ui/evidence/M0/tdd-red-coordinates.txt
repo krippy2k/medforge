@@ -1,0 +1,26 @@
+********* Start testing of CoordinatesTest *********
+Config: Using QtTest library 6.12.0, Qt 6.12.0 (x86_64-little_endian-llp64 shared (dynamic) release build; by GCC 15.1.0), windows 11
+PASS   : CoordinatesTest::initTestCase()
+FAIL!  : CoordinatesTest::identityMapsIndexToMillimeters() 'std::abs((result.value).x - (1)) <= kToleranceMm' returned FALSE. ()
+D:/projects/medforge/tests/unit/core/CoordinatesTest.cpp(40) : failure location
+FAIL!  : CoordinatesTest::appliesOriginAndAnisotropicSpacing() 'std::abs((result.value).x - (-8)) <= kToleranceMm' returned FALSE. ()
+D:/projects/medforge/tests/unit/core/CoordinatesTest.cpp(49) : failure location
+FAIL!  : CoordinatesTest::directionCosinesMapVoxelAxesIntoLps() 'std::abs((result.value).x - (8)) <= kToleranceMm' returned FALSE. ()
+D:/projects/medforge/tests/unit/core/CoordinatesTest.cpp(62) : failure location
+FAIL!  : CoordinatesTest::roundTripsPatientPointToVoxelIndex() 'std::abs((inverse.value).x - (2)) <= kToleranceMm' returned FALSE. ()
+D:/projects/medforge/tests/unit/core/CoordinatesTest.cpp(76) : failure location
+FAIL!  : CoordinatesTest::rejectsNonPositiveSpacing() Compared values are not the same
+   Actual   (voxelIndexToPatientLps(Vec3{0, 0, 0}, geometry).status): 0
+   Expected (CoordinateStatus::NonPositiveSpacing)                  : 2
+D:/projects/medforge/tests/unit/core/CoordinatesTest.cpp(82) : failure location
+FAIL!  : CoordinatesTest::rejectsNonFiniteInput() Compared values are not the same
+   Actual   (voxelIndexToPatientLps(Vec3{nan, 0, 0}, geometry).status): 0
+   Expected (CoordinateStatus::NonFiniteInput)                        : 1
+D:/projects/medforge/tests/unit/core/CoordinatesTest.cpp(93) : failure location
+FAIL!  : CoordinatesTest::rejectsSingularDirection() Compared values are not the same
+   Actual   (voxelIndexToPatientLps(Vec3{1, 0, 0}, geometry).status): 0
+   Expected (CoordinateStatus::SingularDirection)                   : 3
+D:/projects/medforge/tests/unit/core/CoordinatesTest.cpp(104) : failure location
+PASS   : CoordinatesTest::cleanupTestCase()
+Totals: 2 passed, 7 failed, 0 skipped, 0 blacklisted, 15ms
+********* Finished testing of CoordinatesTest *********

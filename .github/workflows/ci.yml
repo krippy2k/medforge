@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  format:
+    name: clang-format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install clang-format
+        run: sudo apt-get update && sudo apt-get install -y clang-format
+      - name: Check formatting
+        run: |
+          find src apps tests -type f \( -name '*.cpp' -o -name '*.h' \) -print0 \
+            | xargs -0 clang-format --dry-run --Werror --style=file
+
+  windows:
+    name: Windows MinGW
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Qt 6.12.0 MinGW
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.12.0"
+          host: windows
+          target: desktop
+          arch: win64_mingw
+          tools: tools_mingw1310 tools_ninja
+          cache: true
+      - name: Configure
+        run: cmake --preset ci-ninja-debug
+      - name: Build
+        run: cmake --build --preset ci-ninja-debug
+      - name: Test
+        run: ctest --preset ci-ninja-debug --output-on-failure
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_ASSUME_STDERR_HAS_CONSOLE: "1"
+          QT_QPA_FONTDIR: "C:/Windows/Fonts"
+
+  linux:
+    name: Linux GCC
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install compiler, Ninja, fonts, and Qt runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ninja-build build-essential cmake pkg-config \
+            fonts-dejavu-core \
+            libglib2.0-dev libicu-dev libpcre2-dev zlib1g-dev libpng-dev \
+            libgl-dev libopengl-dev libgl1 libegl1 libfontconfig1 libfreetype6 \
+            libxkbcommon0 libxkbcommon-x11-0 libdbus-1-3 \
+            libxcb1 libxcb-cursor0 libxcb-glx0 libxcb-icccm4 libxcb-image0 \
+            libxcb-keysyms1 libxcb-randr0 libxcb-render0 libxcb-render-util0 \
+            libxcb-shape0 libxcb-shm0 libxcb-sync1 libxcb-xfixes0 libxcb-xinerama0 libxcb-xkb1 \
+            libx11-6 libx11-xcb1 libxext6 libxi6 libxrender1
+      - name: Install Qt 6.12.0
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.12.0"
+          host: linux
+          target: desktop
+          arch: gcc_64
+          cache: true
+      - name: Configure
+        run: cmake --preset ci-ninja-debug
+      - name: Build
+        run: cmake --build --preset ci-ninja-debug
+      - name: Test
+        run: ctest --preset ci-ninja-debug --output-on-failure
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_ASSUME_STDERR_HAS_CONSOLE: "1"

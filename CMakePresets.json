@@ -1,0 +1,166 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 27,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "windows-mingw-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "description": "Qt 6.12.0 MinGW 13.1 kit installed by the official Qt installer.",
+      "environment": {
+        "PATH": "C:/Qt/Tools/mingw1310_64/bin;C:/Qt/6.12.0/mingw_64/bin;$penv{PATH}"
+      },
+      "cacheVariables": {
+        "CMAKE_PREFIX_PATH": "C:/Qt/6.12.0/mingw_64",
+        "CMAKE_CXX_COMPILER": "C:/Qt/Tools/mingw1310_64/bin/g++.exe",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "windows-mingw-debug",
+      "displayName": "Windows MinGW Debug",
+      "inherits": "windows-mingw-base",
+      "binaryDir": "${sourceDir}/build/windows-mingw-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "windows-mingw-release",
+      "displayName": "Windows MinGW Release",
+      "inherits": "windows-mingw-base",
+      "binaryDir": "${sourceDir}/build/windows-mingw-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "linux-gcc-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "description": "Qt 6.12.0 gcc_64. Set CMAKE_PREFIX_PATH if it is not under ~/Qt or /opt/Qt.",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    },
+    {
+      "name": "linux-gcc-debug",
+      "displayName": "Linux GCC Debug",
+      "inherits": "linux-gcc-base",
+      "binaryDir": "${sourceDir}/build/linux-gcc-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "linux-gcc-release",
+      "displayName": "Linux GCC Release",
+      "inherits": "linux-gcc-base",
+      "binaryDir": "${sourceDir}/build/linux-gcc-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "ci-ninja-debug",
+      "displayName": "CI Ninja Debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/ci-ninja-debug",
+      "description": "Portable preset. CI provides Qt on CMAKE_PREFIX_PATH and the compiler on PATH.",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "windows-mingw-debug",
+      "configurePreset": "windows-mingw-debug"
+    },
+    {
+      "name": "windows-mingw-release",
+      "configurePreset": "windows-mingw-release"
+    },
+    {
+      "name": "linux-gcc-debug",
+      "configurePreset": "linux-gcc-debug"
+    },
+    {
+      "name": "linux-gcc-release",
+      "configurePreset": "linux-gcc-release"
+    },
+    {
+      "name": "ci-ninja-debug",
+      "configurePreset": "ci-ninja-debug"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "windows-mingw-debug",
+      "configurePreset": "windows-mingw-debug",
+      "output": {
+        "outputOnFailure": true
+      },
+      "environment": {
+        "PATH": "C:/Qt/Tools/mingw1310_64/bin;C:/Qt/6.12.0/mingw_64/bin;$penv{PATH}",
+        "QT_QPA_PLATFORM": "offscreen"
+      }
+    },
+    {
+      "name": "windows-mingw-release",
+      "configurePreset": "windows-mingw-release",
+      "output": {
+        "outputOnFailure": true
+      },
+      "environment": {
+        "PATH": "C:/Qt/Tools/mingw1310_64/bin;C:/Qt/6.12.0/mingw_64/bin;$penv{PATH}",
+        "QT_QPA_PLATFORM": "offscreen"
+      }
+    },
+    {
+      "name": "linux-gcc-debug",
+      "configurePreset": "linux-gcc-debug",
+      "output": {
+        "outputOnFailure": true
+      },
+      "environment": {
+        "QT_QPA_PLATFORM": "offscreen"
+      }
+    },
+    {
+      "name": "linux-gcc-release",
+      "configurePreset": "linux-gcc-release",
+      "output": {
+        "outputOnFailure": true
+      },
+      "environment": {
+        "QT_QPA_PLATFORM": "offscreen"
+      }
+    },
+    {
+      "name": "ci-ninja-debug",
+      "configurePreset": "ci-ninja-debug",
+      "output": {
+        "outputOnFailure": true
+      },
+      "environment": {
+        "QT_QPA_PLATFORM": "offscreen"
+      }
+    }
+  ]
+}

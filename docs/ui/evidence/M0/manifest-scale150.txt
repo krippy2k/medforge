@@ -1,0 +1,8 @@
+gallery-1280x800-scale150.png logical 1280x800 image 1920x1200 dpr 1.5
+reference-1280x800-scale150.png logical 1280x800 image 1920x1200 dpr 1.5
+gallery-1920x1080-scale150.png logical 1920x1080 image 2880x1620 dpr 1.5
+reference-1920x1080-scale150.png logical 1920x1080 image 2880x1620 dpr 1.5
+gallery-2560x1440-scale150.png logical 2560x1440 image 3840x2160 dpr 1.5
+reference-2560x1440-scale150.png logical 2560x1440 image 3840x2160 dpr 1.5
+confirm-1280x800-scale150.png logical 1280x800 image 1920x1200
+foundation-1280x800-scale150.png logical 1280x800 image 1920x1200 dpr 1.5

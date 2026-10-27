@@ -1,0 +1,7 @@
+add_library(medforge_imaging STATIC src/Module.cpp)
+add_library(medforge::imaging ALIAS medforge_imaging)
+target_include_directories(medforge_imaging PUBLIC include)
+target_link_libraries(medforge_imaging PUBLIC medforge::core)
+target_compile_features(medforge_imaging PUBLIC cxx_std_20)
+set_target_properties(medforge_imaging PROPERTIES AUTOMOC OFF AUTOUIC OFF AUTORCC OFF)
+medforge_set_core_warnings(medforge_imaging)

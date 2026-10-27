@@ -1,0 +1,14 @@
+{
+  "generator": "medforge-synthetic",
+  "formatVersion": 1,
+  "scalarType": "int16",
+  "endianness": "little",
+  "indexOrder": "i-fastest",
+  "size": [8, 8, 8],
+  "spacingMm": [1, 1, 1],
+  "originMm": [0, 0, 0],
+  "directionRowMajor": [1, 0, 0, 0, 1, 0, 0, 0, 1],
+  "seed": 1,
+  "researchOnly": true,
+  "note": "Synthetic fixture. Not patient data. Not for clinical use."
+}

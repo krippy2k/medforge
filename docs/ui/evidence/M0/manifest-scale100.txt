@@ -1,0 +1,8 @@
+gallery-1280x800-scale100.png logical 1280x800 image 1280x800 dpr 1
+reference-1280x800-scale100.png logical 1280x800 image 1280x800 dpr 1
+gallery-1920x1080-scale100.png logical 1920x1080 image 1920x1080 dpr 1
+reference-1920x1080-scale100.png logical 1920x1080 image 1920x1080 dpr 1
+gallery-2560x1440-scale100.png logical 2560x1440 image 2560x1440 dpr 1
+reference-2560x1440-scale100.png logical 2560x1440 image 2560x1440 dpr 1
+confirm-1280x800-scale100.png logical 1280x800 image 1280x800
+foundation-1280x800-scale100.png logical 1280x800 image 1280x800 dpr 1

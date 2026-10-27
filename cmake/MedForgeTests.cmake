@@ -1,0 +1,24 @@
+function(medforge_add_test name)
+    cmake_parse_arguments(ARG "" "" "SOURCES;LIBS" ${ARGN})
+    add_executable(${name} ${ARG_SOURCES})
+    target_link_libraries(${name} PRIVATE ${ARG_LIBS} Qt6::Test)
+    medforge_set_warnings(${name})
+    add_test(NAME ${name} COMMAND ${name})
+
+    set(test_env "QT_QPA_PLATFORM=offscreen" "QT_ASSUME_STDERR_HAS_CONSOLE=1" "QT_SCALE_FACTOR=1")
+    if(WIN32)
+        set(test_path "$ENV{PATH}")
+        if(MEDFORGE_QT_BIN)
+            set(test_path "${MEDFORGE_QT_BIN};${test_path}")
+        endif()
+        if(MEDFORGE_MINGW_BIN)
+            set(test_path "${MEDFORGE_MINGW_BIN};${test_path}")
+        endif()
+        string(REPLACE ";" "\\;" test_path "${test_path}")
+        list(APPEND test_env "PATH=${test_path}")
+    endif()
+    set_tests_properties(${name} PROPERTIES
+        ENVIRONMENT "${test_env}"
+        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+    )
+endfunction()

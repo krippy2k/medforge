@@ -1,0 +1,14 @@
+---
+description: Test-first C++ engineering and milestone verification
+alwaysApply: true
+---
+
+# Test-first engineering contract
+- Work only within the active milestone; read its requirements, `DESIGN_SYSTEM.md`, and `QUALITY_GATES.md` before planning.
+- For each testable behavior, follow red → green → refactor: write a focused failing test, run it and capture the expected failure, implement, rerun, then refactor. Record test evidence in `docs/MX-verification.md`.
+- Prefer deterministic synthetic fixtures; verify units, orientation, numerical tolerances, cancellation, invalid inputs, and error paths. Never use real identifiable patient data.
+- For UI code, test view-model/state logic and Qt signal/slot behavior with Qt Test; supplement with GUI smoke and screenshot review. Don't force pixel tests for nondeterministic GPU renders.
+- Run targeted tests after each change and full relevant regression tests before completion. Never weaken tests, skip checks, or claim commands ran when they didn't.
+- Use C++20, RAII, explicit ownership, const correctness, small cohesive modules, Qt GUI-thread affinity, and async workers for long operations.
+- Keep domain/geometry code independent of Qt widgets and VTK. Document dependencies and licenses.
+- Complete a milestone only when `QUALITY_GATES.md` and its own exit criteria pass. Mark blocked/unverified checks explicitly, never as passed.

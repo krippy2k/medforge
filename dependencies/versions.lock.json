@@ -1,0 +1,40 @@
+{
+  "project": "medforge",
+  "version": "0.1.0",
+  "cxxStandard": "20",
+  "cmakeMinimum": "3.27",
+  "generator": "Ninja",
+  "qt": {
+    "version": "6.12.0",
+    "components": ["Widgets", "Test"],
+    "windowsKit": "mingw_64",
+    "linuxKit": "gcc_64"
+  },
+  "compiler": {
+    "windowsPrimary": {
+      "id": "GNU",
+      "version": "13.1.0",
+      "triplet": "x86_64-posix-seh",
+      "package": "Qt mingw1310_64"
+    },
+    "windowsAlternate": "MSVC with a matching Qt MSVC kit. Not verified in M0.",
+    "linux": {
+      "id": "GNU",
+      "version": "15.2.0",
+      "distribution": "Ubuntu 26.04.1 WSL2",
+      "kit": "Qt 6.12.0 gcc_64",
+      "qtLocation": "$HOME/Qt/6.12.0/gcc_64",
+      "ci": "Ubuntu 24.04 with the same Qt gcc_64 kit"
+    }
+  },
+  "ninja": "1.13.2",
+  "clangFormat": "20.1.8",
+  "lockMechanism": "This file plus the Qt online-installer kit named above. vcpkg is not used in M0 because Qt 6.12.0 is already supplied by the official installer and a from-source Qt build is not required.",
+  "planned": {
+    "vtk": "9.4",
+    "itk": "5.4",
+    "dcmtk": "3.6.9",
+    "opencascade": "7.9",
+    "cgal": "unpinned; do not add unless VTK and focused mesh algorithms are inadequate at M6"
+  }
+}

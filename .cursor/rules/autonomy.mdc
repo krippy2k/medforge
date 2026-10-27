@@ -1,0 +1,13 @@
+---
+description: Autonomous safe implementation and approval boundaries
+alwaysApply: true
+---
+
+# Autonomous execution with bounded authority
+- Execute the approved milestone plan without asking for permission for ordinary file edits, tests, local builds, formatting, non-destructive refactors, UI polish, or error fixes.
+- Choose the simplest maintainable approach when implementation details are unspecified; document significant decisions in the milestone verification report.
+- Do not ask to proceed after every step. Provide a concise summary at milestone completion or when genuinely blocked.
+- Seek approval before deleting unrelated/user data, irreversible operations, changing architecture or milestone scope substantially, adding major dependencies, accessing secrets or external sensitive data, publishing releases, pushing to remotes, or spending money.
+- Dependency installation may proceed only for dependencies already approved in project requirements and through preconfigured tooling; new substantial dependencies need approval.
+- Never bypass Cursor's platform security/permission controls. Repository rules express intent but cannot override terminal permissions; use configured allowlists for trusted commands rather than blanket unrestricted execution.
+- If an operation requires a platform permission prompt, follow it. Never claim the rules suppress prompts.

@@ -1,0 +1,18 @@
+********* Start testing of NumericEditorTest *********
+Config: Using QtTest library 6.12.0, Qt 6.12.0 (x86_64-little_endian-llp64 shared (dynamic) release build; by GCC 15.1.0), windows 11
+PASS   : NumericEditorTest::initTestCase()
+QWARN  : NumericEditorTest::showsLabelAndUnit() QFontDatabase: Cannot find font directory C:/Qt/6.12.0/mingw_64/lib/fonts.
+Note that Qt no longer ships fonts. Deploy some (from https://dejavu-fonts.github.io/ for example) or switch to fontconfig.
+PASS   : NumericEditorTest::showsLabelAndUnit()
+PASS   : NumericEditorTest::acceptsInRangeValue()
+FAIL!  : NumericEditorTest::rejectsOutOfRangeAndKeepsPreviousValue() '!editor.isValid()' returned FALSE. ()
+D:/projects/medforge/tests/unit/ui/NumericEditorTest.cpp(52) : failure location
+FAIL!  : NumericEditorTest::rejectsEmptyText() '!editor.isValid()' returned FALSE. ()
+D:/projects/medforge/tests/unit/ui/NumericEditorTest.cpp(66) : failure location
+FAIL!  : NumericEditorTest::disabledEditorDoesNotAcceptEdits() Compared doubles are not the same (fuzzy compare)
+   Actual   (editor.value()): 9 (0x1.2p+3)
+   Expected (4.0)           : 4 (0x1p+2)
+D:/projects/medforge/tests/unit/ui/NumericEditorTest.cpp(81) : failure location
+PASS   : NumericEditorTest::cleanupTestCase()
+Totals: 4 passed, 3 failed, 0 skipped, 0 blacklisted, 2ms
+********* Finished testing of NumericEditorTest *********
