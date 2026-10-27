@@ -33,6 +33,8 @@ jobs:
           cache: true
       - name: Configure
         run: cmake --preset ci-ninja-debug
+        env:
+          CMAKE_PREFIX_PATH: ${{ env.QT_ROOT_DIR }}
       - name: Build
         run: cmake --build --preset ci-ninja-debug
       - name: Test
@@ -66,10 +68,13 @@ jobs:
           version: "6.12.0"
           host: linux
           target: desktop
-          arch: gcc_64
+          # aqt's package name. The kit is still installed under 6.12.0/gcc_64.
+          arch: linux_gcc_64
           cache: true
       - name: Configure
         run: cmake --preset ci-ninja-debug
+        env:
+          CMAKE_PREFIX_PATH: ${{ env.QT_ROOT_DIR }}
       - name: Build
         run: cmake --build --preset ci-ninja-debug
       - name: Test
