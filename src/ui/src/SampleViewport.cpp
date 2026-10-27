@@ -9,12 +9,14 @@
 #include <QVBoxLayout>
 
 #ifdef MEDFORGE_HAS_VTK
+#include <QSurfaceFormat>
 #include <QVTKOpenGLNativeWidget.h>
 #include <vtkActor.h>
 #include <vtkAxesActor.h>
 #include <vtkCamera.h>
 #include <vtkCubeSource.h>
 #include <vtkGenericOpenGLRenderWindow.h>
+#include <vtkImageData.h>
 #include <vtkInteractorStyleTrackballCamera.h>
 #include <vtkNew.h>
 #include <vtkPlaneSource.h>
@@ -23,11 +25,8 @@
 #include <vtkRenderWindowInteractor.h>
 #include <vtkRenderer.h>
 #include <vtkRendererCollection.h>
-#include <vtkImageData.h>
 #include <vtkSphereSource.h>
 #include <vtkWindowToImageFilter.h>
-
-#include <QSurfaceFormat>
 #endif
 
 namespace medforge::ui {
