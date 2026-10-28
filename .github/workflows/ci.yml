@@ -38,7 +38,8 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
-          vsversion: "2022"
+          # windows-latest is Visual Studio 2026. Omitting vsversion selects
+          # that install; "2022" looks only for the Visual Studio 17 tree.
       - name: Configure
         run: cmake --preset ci-ninja-debug
         env:
