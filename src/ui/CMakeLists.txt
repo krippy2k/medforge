@@ -32,8 +32,16 @@ medforge_set_warnings(medforge_ui)
 
 set(_medforge_vtk_candidates)
 if(WIN32)
-    list(APPEND _medforge_vtk_candidates
-        "${CMAKE_SOURCE_DIR}/third_party/dist/vtk-9.4.2-windows-mingw/lib/cmake/vtk-9.4")
+    if(MSVC)
+        list(APPEND _medforge_vtk_candidates
+            "${CMAKE_SOURCE_DIR}/third_party/dist/vtk-9.4.2-windows-msvc/lib/cmake/vtk-9.4")
+        if(VTK_DIR MATCHES "windows-mingw")
+            unset(VTK_DIR CACHE)
+        endif()
+    else()
+        list(APPEND _medforge_vtk_candidates
+            "${CMAKE_SOURCE_DIR}/third_party/dist/vtk-9.4.2-windows-mingw/lib/cmake/vtk-9.4")
+    endif()
     if(VTK_DIR MATCHES "linux")
         unset(VTK_DIR CACHE)
     endif()

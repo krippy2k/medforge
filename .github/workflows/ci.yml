@@ -18,19 +18,23 @@ jobs:
             | xargs -0 clang-format --dry-run --Werror --style=file
 
   windows:
-    name: Windows MinGW
+    name: Windows MSVC
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install Qt 6.12.0 MinGW
+      - name: Install Qt 6.12.0 MSVC
         uses: jurplel/install-qt-action@v4
         with:
           version: "6.12.0"
           host: windows
           target: desktop
-          arch: win64_mingw
-          tools: tools_mingw1310 tools_ninja
+          arch: win64_msvc2022_64
           cache: true
+      - name: Prepare the MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+          vsversion: "2022"
       - name: Configure
         run: cmake --preset ci-ninja-debug
         env:

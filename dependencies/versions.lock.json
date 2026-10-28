@@ -3,21 +3,22 @@
   "version": "0.1.0",
   "cxxStandard": "20",
   "cmakeMinimum": "3.27",
-  "generator": "Ninja",
+  "generator": "Visual Studio 18 2026 on Windows; Ninja on Linux and in CI",
   "qt": {
     "version": "6.12.0",
     "components": ["Widgets", "Test"],
-    "windowsKit": "mingw_64",
+    "windowsKit": "msvc2022_64",
     "linuxKit": "gcc_64"
   },
   "compiler": {
     "windowsPrimary": {
-      "id": "GNU",
-      "version": "13.1.0",
-      "triplet": "x86_64-posix-seh",
-      "package": "Qt mingw1310_64"
+      "id": "MSVC",
+      "version": "14.51",
+      "ide": "Visual Studio 18 2026",
+      "qtKit": "Qt 6.12.0 msvc2022_64",
+      "qtLocation": "C:/Qt/6.12.0/msvc2022_64"
     },
-    "windowsAlternate": "MSVC with a matching Qt MSVC kit. Not verified in M0.",
+    "windowsCi": "GitHub Actions windows-latest uses MSVC 2022 with the same Qt win64_msvc2022_64 kit.",
     "linux": {
       "id": "GNU",
       "version": "15.2.0",

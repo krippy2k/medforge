@@ -1,15 +1,18 @@
 param(
-    [string]$BuildDir = "build/windows-mingw-debug",
+    [string]$BuildDir = "build/windows-msvc",
     [string]$OutputDir = "docs/ui/evidence/M0"
 )
 
 $ErrorActionPreference = "Stop"
-$exe = Join-Path $BuildDir "bin/medforge.exe"
+$exe = Join-Path $BuildDir "bin/Debug/medforge.exe"
 if (-not (Test-Path $exe)) {
-    throw "Executable not found: $exe"
+    $exe = Join-Path $BuildDir "bin/medforge.exe"
+}
+if (-not (Test-Path $exe)) {
+    throw "Executable not found under $BuildDir"
 }
 
-$env:PATH = "C:\Qt\Tools\mingw1310_64\bin;C:\Qt\6.12.0\mingw_64\bin;" + $env:PATH
+$env:PATH = "C:\Qt\6.12.0\msvc2022_64\bin;" + $env:PATH
 $env:QT_QPA_PLATFORM = "offscreen"
 $env:QT_QPA_FONTDIR = "C:\Windows\Fonts"
 $env:QT_ASSUME_STDERR_HAS_CONSOLE = "1"

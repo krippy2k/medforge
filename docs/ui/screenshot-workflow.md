@@ -7,19 +7,19 @@ Windows is the primary target. Capture uses the offscreen Qt platform so a 2560Ã
 From a configured build:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File tools/capture_screenshots.ps1 -BuildDir build/windows-mingw-debug
+powershell -ExecutionPolicy Bypass -File tools/capture_screenshots.ps1 -BuildDir build/windows-msvc
 ```
 
 Or directly:
 
 ```powershell
-$env:PATH = "C:\Qt\Tools\mingw1310_64\bin;C:\Qt\6.12.0\mingw_64\bin;$env:PATH"
+$env:PATH = "C:\Qt\6.12.0\msvc2022_64\bin;$env:PATH"
 $env:QT_QPA_PLATFORM = "offscreen"
 $env:QT_QPA_FONTDIR = "C:\Windows\Fonts"
 $env:QT_SCALE_FACTOR = "1"
-.\build\windows-mingw-debug\bin\medforge.exe --capture docs\ui\evidence\M0
+.\build\windows-msvc\bin\Debug\medforge.exe --capture docs\ui\evidence\M0
 $env:QT_SCALE_FACTOR = "1.5"
-.\build\windows-mingw-debug\bin\medforge.exe --capture docs\ui\evidence\M0
+.\build\windows-msvc\bin\Debug\medforge.exe --capture docs\ui\evidence\M0
 ```
 
 On Linux, from a `linux-gcc-debug` build:

@@ -2,6 +2,8 @@
 
 Status: local gates pass. GitHub Actions has not been executed, so the remote CI acceptance item is **NOT VERIFIED**. M1 was not started.
 
+The results below were recorded with the MinGW Qt kit. The current local Windows preset is `windows-msvc` (Visual Studio, Qt `msvc2022_64`).
+
 ## Scope
 C++20/Qt 6.12 foundation only.
 

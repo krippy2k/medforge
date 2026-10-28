@@ -3,7 +3,7 @@
 Research/demo only. Not for clinical use. No patient data is loaded.
 
 1. Configure and build the debug preset (see the README).
-2. Run `ctest --preset windows-mingw-debug --output-on-failure` and show the coordinate, command-history, and UI tests.
+2. Run `ctest --preset windows-msvc-debug --output-on-failure` and show the coordinate, command-history, and UI tests.
 3. Start `medforge.exe`. Point out the research notice, then open the component gallery from the button or Developer menu.
 4. In the gallery, change the segmented control, enter an out-of-range spacing value, select a browser row, dismiss a notification, and run the sample task. Cancel it before it finishes and show that the status line reports cancellation.
 5. Open **Delete landmark…** and cancel the dialog. The default action is Cancel.
