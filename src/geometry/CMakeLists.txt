@@ -1,4 +1,7 @@
-add_library(medforge_geometry STATIC src/Module.cpp)
+add_library(medforge_geometry STATIC
+    src/Module.cpp
+    src/Surface.cpp
+)
 add_library(medforge::geometry ALIAS medforge_geometry)
 target_include_directories(medforge_geometry PUBLIC include)
 target_link_libraries(medforge_geometry PUBLIC medforge::core)

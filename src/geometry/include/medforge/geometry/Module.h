@@ -2,7 +2,7 @@
 
 namespace medforge::geometry {
 
-// Meshes, measurements, and topology arrive in later milestones.
+// Surface meshes and their measurements. Extraction uses the rendering module.
 const char* moduleName();
 
 } // namespace medforge::geometry

@@ -18,6 +18,8 @@ jobs:
             | xargs -0 clang-format --dry-run --Werror --style=file
 
   windows:
+    # VTK is optional. This job does not install it. Isosurface checks skip,
+    # and the volume pane reports that VTK is not available.
     name: Windows MSVC
     runs-on: windows-latest
     steps:

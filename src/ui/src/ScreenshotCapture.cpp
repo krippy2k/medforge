@@ -6,9 +6,15 @@
 #include "medforge/ui/DesignTokens.h"
 #include "medforge/ui/FoundationWindow.h"
 #include "medforge/ui/GalleryWindow.h"
+#include "medforge/ui/FoundationWidgets.h"
+#include "medforge/ui/NumericEditor.h"
+#include "medforge/ui/VolumeViewport.h"
 #include "medforge/ui/WorkspaceActions.h"
 #include "medforge/ui/WorkspaceReference.h"
 #include "medforge/ui/WorkspaceWindow.h"
+
+#include <QLabel>
+#include <QPushButton>
 
 #include <QApplication>
 #include <QDir>
@@ -23,6 +29,7 @@
 #include <QWidget>
 #include <algorithm>
 #include <filesystem>
+#include <functional>
 
 namespace medforge::ui {
 namespace {
@@ -120,6 +127,15 @@ bool saveDialog(const QSize& canvasSize,
         return false;
     }
     return true;
+}
+
+bool waitUntil(int timeoutMs, const std::function<bool()>& ready) {
+    QElapsedTimer timer;
+    timer.start();
+    while (!ready() && timer.elapsed() < timeoutMs) {
+        QApplication::processEvents(QEventLoop::AllEvents, 20);
+    }
+    return ready();
 }
 
 bool waitForPhase(WorkspaceWindow& window, WorkspaceActions::Phase phase, int timeoutMs) {
@@ -241,6 +257,137 @@ bool saveMprStates(const QString& directory,
     return true;
 }
 
+bool saveVolumeStates(const QString& directory,
+                      int percent,
+                      QString* error,
+                      QTextStream& manifest) {
+    const std::filesystem::path phantom =
+        std::filesystem::temp_directory_path() / "medforge-m3-capture-phantom";
+    std::string phantomError;
+    if (!medforge::imaging::phantom::writeSyntheticAxialSeries(phantom, &phantomError)) {
+        if (error != nullptr) {
+            *error = QString::fromStdString(phantomError);
+        }
+        return false;
+    }
+    const QString layout = QDir::temp().filePath(QStringLiteral("medforge-m3-capture-layout.ini"));
+    const QString path = pathString(phantom);
+    {
+        WorkspaceWindow building(layout);
+        building.importFolder(path);
+        if (!waitForPhase(building, WorkspaceActions::Phase::Study, 5000)) {
+            if (error != nullptr) {
+                *error = QStringLiteral("Volume capture import did not finish.");
+            }
+            return false;
+        }
+        building.buildSurface(1500);
+        if (!saveWidget(building,
+                        QSize(1280, 800),
+                        QDir(directory).filePath(
+                            QStringLiteral("volume-building-1280x800-scale%1.png").arg(percent)),
+                        error,
+                        manifest)) {
+            return false;
+        }
+        building.close();
+    }
+    const QList<QSize> sizes = {QSize(1280, 800), QSize(1920, 1080), QSize(2560, 1440)};
+    for (const QSize& size : sizes) {
+        WorkspaceWindow populated(layout);
+        populated.importFolder(path);
+        if (!waitForPhase(populated, WorkspaceActions::Phase::Study, 5000)) {
+            if (error != nullptr) {
+                *error = QStringLiteral("Volume capture import did not finish.");
+            }
+            return false;
+        }
+        const QString name = QStringLiteral("volume-populated-%1x%2-scale%3.png")
+                                 .arg(size.width())
+                                 .arg(size.height())
+                                 .arg(percent);
+        if (!saveWidget(populated, size, QDir(directory).filePath(name), error, manifest)) {
+            return false;
+        }
+        populated.close();
+    }
+    {
+        WorkspaceWindow emptySurface(layout);
+        emptySurface.importFolder(path);
+        if (!waitForPhase(emptySurface, WorkspaceActions::Phase::Study, 5000)) {
+            if (error != nullptr) {
+                *error = QStringLiteral("Volume capture import did not finish.");
+            }
+            return false;
+        }
+        auto* threshold = emptySurface.findChild<NumericEditor*>(QStringLiteral("isoThreshold"));
+        if (threshold == nullptr) {
+            if (error != nullptr) {
+                *error = QStringLiteral("Threshold control is missing.");
+            }
+            return false;
+        }
+        threshold->setValue(3000);
+        emptySurface.buildSurface();
+        if (!waitUntil(5000, [&emptySurface] {
+                return emptySurface.errorBanner()->message().contains(QStringLiteral("No surface")) ||
+                       emptySurface.errorBanner()->message().contains(QStringLiteral("VTK"));
+            })) {
+            if (error != nullptr) {
+                *error = QStringLiteral("Empty threshold did not report a result.");
+            }
+            return false;
+        }
+        if (!saveWidget(emptySurface,
+                        QSize(1280, 800),
+                        QDir(directory).filePath(
+                            QStringLiteral("volume-no-surface-1280x800-scale%1.png").arg(percent)),
+                        error,
+                        manifest)) {
+            return false;
+        }
+        emptySurface.close();
+    }
+    for (const QSize& size : sizes) {
+        WorkspaceWindow meshed(layout);
+        meshed.importFolder(path);
+        if (!waitForPhase(meshed, WorkspaceActions::Phase::Study, 5000)) {
+            if (error != nullptr) {
+                *error = QStringLiteral("Volume capture import did not finish.");
+            }
+            return false;
+        }
+        auto* threshold = meshed.findChild<NumericEditor*>(QStringLiteral("isoThreshold"));
+        if (threshold == nullptr) {
+            if (error != nullptr) {
+                *error = QStringLiteral("Threshold control is missing.");
+            }
+            return false;
+        }
+        threshold->setValue(0);
+        meshed.buildSurface();
+        const bool ready = waitUntil(5000, [&meshed] {
+            return meshed.volumeViewport()->meshTriangleCount() > 0 ||
+                   meshed.errorBanner()->message().contains(QStringLiteral("VTK"));
+        });
+        if (!ready) {
+            if (error != nullptr) {
+                *error = QStringLiteral("Surface extraction did not finish.");
+            }
+            return false;
+        }
+        const QString name = QStringLiteral("volume-mesh-%1x%2-scale%3.png")
+                                 .arg(size.width())
+                                 .arg(size.height())
+                                 .arg(percent);
+        if (!saveWidget(meshed, size, QDir(directory).filePath(name), error, manifest)) {
+            return false;
+        }
+        meshed.close();
+    }
+    return true;
+}
+
 } // namespace
 
 bool captureUiEvidence(const QString& directory, QString* error) {
@@ -296,7 +443,8 @@ bool captureUiEvidence(const QString& directory, QString* error) {
         return false;
     }
     foundation.close();
-    return saveMprStates(directory, percent, error, manifest);
+    return saveMprStates(directory, percent, error, manifest) &&
+           saveVolumeStates(directory, percent, error, manifest);
 }
 
 } // namespace medforge::ui

@@ -15,7 +15,7 @@ Dependency direction is one-way:
 `core` ← `imaging`, `geometry` ← `cad`, `core` ← `rendering`, `core` ← `ui` ← `apps/desktop`
 
 - `core` has no Qt dependency. It owns LPS millimeter conversion, entity ids, cancellation tokens, command history, and the synthetic volume fixture.
-- `imaging`, `geometry`, `cad`, and `rendering` are linked boundaries only. VTK, DICOM, segmentation, and CAD kernels are not compiled in M0.
+- `imaging` reads uncompressed CT. `rendering` uses VTK 9.4.2 for volume ray casting and Flying Edges when that package is present. Segmentation and CAD kernels are later milestones.
 - `ui` owns tokens, the generated stylesheet, shared widgets, the component gallery, and the M1 layout reference.
 - Patient coordinates are LPS millimeters. Voxel conversion is `origin + direction × (index ∘ spacing)`. Spacing must be positive and the direction matrix must be invertible.
 
@@ -60,10 +60,10 @@ The desktop executable is `build/<preset>/bin/medforge` (`.exe` on Windows). Vis
 ```text
 medforge --gallery
 medforge --reference
-medforge --capture docs/ui/evidence/M0
+medforge --capture docs/ui/evidence/M3
 ```
 
-Screenshot steps are in `docs/ui/screenshot-workflow.md`. A short demo script is in `docs/M0-demo.md`.
+Screenshot steps are in `docs/ui/screenshot-workflow.md`. The current demo script is `docs/M3-demo.md`.
 
 Generate the checked-in synthetic sphere fixture with:
 
@@ -77,7 +77,9 @@ The fixture is synthetic. It is not patient data.
 Tokens live in code and are written into the Qt stylesheet. The approved M1 wireframe is `docs/ui/reference/m1-main-window-1920x1080.png` (with 1280×800 and 2560×1440 siblings). M1 should reuse these tokens and components.
 
 ## Limitations
-- No DICOM reader, viewport, segmentation, measurement, mesh, or CAD kernel.
+- M3 shows a CT volume and an isosurface in the 3D pane. Segmentation, measurements, and mesh file export are later milestones.
+- Offscreen capture draws a software preview of the volume bounds and the mesh. GPU ray-cast pixels are not part of that capture.
+- Compressed DICOM transfer syntaxes and enhanced multi-frame CT are recognized and rejected.
 - The gallery sample task is a cancellable progress demonstration, not an imaging operation.
 - Remote GitHub Actions has not been executed from this workspace. The Linux job in `.github/workflows/ci.yml` matches the Ubuntu packages used for the local container build.
 - Visual checks use Qt offscreen capture and `QT_SCALE_FACTOR`, not a physical 2560×1440 panel or a Windows 150% display setting.

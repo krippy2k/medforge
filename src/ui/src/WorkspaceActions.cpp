@@ -7,11 +7,11 @@ WorkspaceActions::Phase WorkspaceActions::phase() const {
 }
 
 bool WorkspaceActions::canShowSample() const {
-    return phase_ != Phase::Ready && phase_ != Phase::Importing;
+    return phase_ == Phase::Empty || phase_ == Phase::Error;
 }
 
 bool WorkspaceActions::canResetCamera() const {
-    return phase_ == Phase::Ready;
+    return phase_ == Phase::Ready || phase_ == Phase::Study;
 }
 
 bool WorkspaceActions::canResetLayout() const {

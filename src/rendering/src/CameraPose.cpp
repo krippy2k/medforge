@@ -104,6 +104,45 @@ CameraPose zoom(const CameraPose& pose, double factor) {
     return next;
 }
 
+CameraPose anatomicalCamera(AnatomicalView view,
+                            const core::Vec3& boundsMin,
+                            const core::Vec3& boundsMax) {
+    const Vec3 center{(boundsMin.x + boundsMax.x) * 0.5, (boundsMin.y + boundsMax.y) * 0.5,
+                      (boundsMin.z + boundsMax.z) * 0.5};
+    const Vec3 extent{std::abs(boundsMax.x - boundsMin.x), std::abs(boundsMax.y - boundsMin.y),
+                      std::abs(boundsMax.z - boundsMin.z)};
+    const double distance = std::max({extent.x, extent.y, extent.z, 1.0}) * 2.2;
+    Vec3 offset{0, -1, 0};
+    Vec3 up{0, 0, 1};
+    switch (view) {
+    case AnatomicalView::Anterior:
+        offset = {0, -1, 0};
+        break;
+    case AnatomicalView::Posterior:
+        offset = {0, 1, 0};
+        break;
+    case AnatomicalView::Left:
+        offset = {1, 0, 0};
+        break;
+    case AnatomicalView::Right:
+        offset = {-1, 0, 0};
+        break;
+    case AnatomicalView::Superior:
+        offset = {0, 0, 1};
+        up = {0, -1, 0};
+        break;
+    case AnatomicalView::Inferior:
+        offset = {0, 0, -1};
+        up = {0, -1, 0};
+        break;
+    }
+    CameraPose pose;
+    pose.focalPoint = toArray(center);
+    pose.position = toArray(add(center, mul(offset, distance)));
+    pose.viewUp = toArray(up);
+    return pose;
+}
+
 bool cameraPosesNear(const CameraPose& left, const CameraPose& right, double tolerance) {
     return nearArray(left.position, right.position, tolerance) &&
            nearArray(left.focalPoint, right.focalPoint, tolerance) &&

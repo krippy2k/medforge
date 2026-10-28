@@ -35,6 +35,14 @@ void ScreenshotCaptureTest::writesGalleryAndReferencePngs() {
         QStringLiteral("mpr-populated-1280x800-scale100.png"),
         QStringLiteral("mpr-populated-1920x1080-scale100.png"),
         QStringLiteral("mpr-populated-2560x1440-scale100.png"),
+        QStringLiteral("volume-building-1280x800-scale100.png"),
+        QStringLiteral("volume-populated-1280x800-scale100.png"),
+        QStringLiteral("volume-populated-1920x1080-scale100.png"),
+        QStringLiteral("volume-populated-2560x1440-scale100.png"),
+        QStringLiteral("volume-no-surface-1280x800-scale100.png"),
+        QStringLiteral("volume-mesh-1280x800-scale100.png"),
+        QStringLiteral("volume-mesh-1920x1080-scale100.png"),
+        QStringLiteral("volume-mesh-2560x1440-scale100.png"),
     };
     for (const QString& name : required) {
         const QFileInfo info(QDir(directory).filePath(name));

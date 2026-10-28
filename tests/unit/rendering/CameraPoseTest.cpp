@@ -3,6 +3,8 @@
 #include <QtTest>
 #include <cmath>
 
+using medforge::rendering::AnatomicalView;
+using medforge::rendering::anatomicalCamera;
 using medforge::rendering::cameraPosesNear;
 using medforge::rendering::homeCamera;
 using medforge::rendering::orbitYaw;
@@ -18,6 +20,7 @@ private slots:
     void panMovesCameraAndFocalPointTogether();
     void zoomMovesCloserWithoutChangingTheFocalPoint();
     void resetReturnsHomeAfterNavigation();
+    void anteriorCameraLooksFromTheFront();
 };
 
 void CameraPoseTest::homeLooksAtOriginFromAboveTheFront() {
@@ -67,6 +70,15 @@ void CameraPoseTest::resetReturnsHomeAfterNavigation() {
     const auto moved = zoom(orbitYaw(pan(home, 1.0, -1.0), 30.0), 1.5);
     QVERIFY(!cameraPosesNear(moved, home, 1e-6));
     QVERIFY(cameraPosesNear(homeCamera(), home, 1e-9));
+}
+
+void CameraPoseTest::anteriorCameraLooksFromTheFront() {
+    const auto pose = anatomicalCamera(AnatomicalView::Anterior, {-2, -3, -4}, {2, 5, 6});
+    QCOMPARE(pose.focalPoint[0], 0.0);
+    QCOMPARE(pose.focalPoint[1], 1.0);
+    QCOMPARE(pose.focalPoint[2], 1.0);
+    QVERIFY(pose.position[1] < pose.focalPoint[1]);
+    QCOMPARE(pose.viewUp[2], 1.0);
 }
 
 QTEST_APPLESS_MAIN(CameraPoseTest)

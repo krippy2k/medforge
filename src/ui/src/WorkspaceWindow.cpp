@@ -2,6 +2,7 @@
 
 #include "medforge/core/Version.h"
 #include "medforge/imaging/CtVolume.h"
+#include "medforge/rendering/TransferFunction.h"
 #include "medforge/ui/DesignTokens.h"
 #include "medforge/ui/FoundationWidgets.h"
 #include "medforge/ui/LayoutPreferences.h"
@@ -9,10 +10,12 @@
 #include "medforge/ui/NumericEditor.h"
 #include "medforge/ui/SampleViewport.h"
 #include "medforge/ui/SegmentedControl.h"
+#include "medforge/ui/VolumeViewport.h"
 #include "medforge/ui/WorkspaceActions.h"
 
 #include <QAction>
 #include <QCloseEvent>
+#include <QHBoxLayout>
 #include <QDockWidget>
 #include <QFileDialog>
 #include <QFrame>
@@ -22,6 +25,8 @@
 #include <QLabel>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QPushButton>
+#include <QScrollArea>
 #include <QStatusBar>
 #include <QToolBar>
 #include <QVBoxLayout>
@@ -76,9 +81,11 @@ WorkspaceWindow::WorkspaceWindow(const QString& layoutFile, QWidget* parent)
     syncActions();
     updateProperties();
     sampleViewport_->realizeNativeWindow();
+    volumeViewport_->realizeNativeWindow();
 }
 
 WorkspaceWindow::~WorkspaceWindow() {
+    shutdownSurface();
     shutdownImport();
 }
 
@@ -112,6 +119,14 @@ QAction* WorkspaceWindow::importCtAction() const {
 
 SampleViewport* WorkspaceWindow::sampleViewport() const {
     return sampleViewport_;
+}
+
+VolumeViewport* WorkspaceWindow::volumeViewport() const {
+    return volumeViewport_;
+}
+
+QLabel* WorkspaceWindow::meshStatsLabel() const {
+    return meshStats_;
 }
 
 MprViewport* WorkspaceWindow::axialViewport() const {
@@ -153,6 +168,9 @@ void WorkspaceWindow::resetLayout() {
 }
 
 void WorkspaceWindow::showSample() {
+    if (hasVolume_) {
+        return;
+    }
     QString error;
     if (!sampleViewport_->showSample(&error)) {
         actions_->reportError(error);
@@ -165,6 +183,7 @@ void WorkspaceWindow::showSample() {
 }
 
 void WorkspaceWindow::closeEvent(QCloseEvent* event) {
+    shutdownSurface();
     shutdownImport();
     saveLayout();
     QMainWindow::closeEvent(event);
@@ -196,6 +215,14 @@ void WorkspaceWindow::buildMenus() {
     resetLayoutAction_ = viewMenu->addAction(QStringLiteral("Reset &layout"));
     connect(showSampleAction_, &QAction::triggered, this, &WorkspaceWindow::showSample);
     connect(resetCameraAction_, &QAction::triggered, this, [this] {
+        if (hasVolume_) {
+            QString error;
+            if (!volumeViewport_->resetToBounds(&error)) {
+                errorBanner_->setMessage(Banner::Severity::Error, error);
+                errorBanner_->setVisible(true);
+            }
+            return;
+        }
         if (!actions_->resetCamera()) {
             return;
         }
@@ -241,12 +268,17 @@ void WorkspaceWindow::buildDocks() {
     seriesRow_->setDepth(1);
     seriesRow_->setObjectName(QStringLiteral("loadedSeriesRow"));
     seriesRow_->hide();
+    surfaceRow_ = new BrowserRow(QStringLiteral("Surface"), studies);
+    surfaceRow_->setDepth(1);
+    surfaceRow_->setObjectName(QStringLiteral("surfaceRow"));
+    surfaceRow_->hide();
     auto* sampleRow = new BrowserRow(QStringLiteral("Cube and sphere"), studies);
     sampleRow->setDepth(1);
     sampleRow->setObjectName(QStringLiteral("sampleSceneRow"));
     connect(sampleRow, &BrowserRow::activated, this, &WorkspaceWindow::showSample);
     studiesLayout->addWidget(studiesRow_);
     studiesLayout->addWidget(seriesRow_);
+    studiesLayout->addWidget(surfaceRow_);
     studiesLayout->addWidget(sampleRow);
     studiesLayout->addStretch(1);
     studiesDock_->setWidget(studies);
@@ -295,6 +327,61 @@ void WorkspaceWindow::buildDocks() {
     ctLayout->addWidget(windowWidth_);
     ctLayout->addWidget(windowCenter_);
     ctLayout->addWidget(displayNote);
+    volumePresets_ = new SegmentedControl(
+        {QStringLiteral("Soft"), QStringLiteral("Lung"), QStringLiteral("Bone")}, ctProperties_);
+    volumePresets_->setObjectName(QStringLiteral("volumePresets"));
+    volumePresets_->setToolTip(QStringLiteral("Volume opacity presets. Not a clinical transfer function."));
+    auto* visibility = new QWidget(ctProperties_);
+    auto* visibilityLayout = new QHBoxLayout(visibility);
+    visibilityLayout->setContentsMargins(0, 0, 0, 0);
+    volumeVisibleButton_ = new QPushButton(QStringLiteral("Volume"), visibility);
+    volumeVisibleButton_->setObjectName(QStringLiteral("volumeVisible"));
+    volumeVisibleButton_->setCheckable(true);
+    volumeVisibleButton_->setChecked(true);
+    volumeVisibleButton_->setProperty("mfRole", QStringLiteral("segment"));
+    meshVisibleButton_ = new QPushButton(QStringLiteral("Surface"), visibility);
+    meshVisibleButton_->setObjectName(QStringLiteral("meshVisible"));
+    meshVisibleButton_->setCheckable(true);
+    meshVisibleButton_->setChecked(true);
+    meshVisibleButton_->setProperty("mfRole", QStringLiteral("segment"));
+    clipButton_ = new QPushButton(QStringLiteral("Clip"), visibility);
+    clipButton_->setObjectName(QStringLiteral("clipPlane"));
+    clipButton_->setCheckable(true);
+    clipButton_->setProperty("mfRole", QStringLiteral("segment"));
+    visibilityLayout->addWidget(volumeVisibleButton_);
+    visibilityLayout->addWidget(meshVisibleButton_);
+    visibilityLayout->addWidget(clipButton_);
+    isoThreshold_ = new NumericEditor(ctProperties_);
+    isoThreshold_->setObjectName(QStringLiteral("isoThreshold"));
+    isoThreshold_->setLabel(QStringLiteral("Threshold"));
+    isoThreshold_->setUnit(QStringLiteral("HU"));
+    isoThreshold_->setDecimals(0);
+    isoThreshold_->setRange(-1000, 3000);
+    isoThreshold_->setValue(200);
+    buildSurfaceButton_ = new QPushButton(QStringLiteral("Build surface"), ctProperties_);
+    buildSurfaceButton_->setObjectName(QStringLiteral("buildSurface"));
+    buildSurfaceButton_->setProperty("mfRole", QStringLiteral("primary"));
+    cameraViews_ = new SegmentedControl(
+        {QStringLiteral("A"), QStringLiteral("P"), QStringLiteral("L"), QStringLiteral("R"),
+         QStringLiteral("S"), QStringLiteral("I")},
+        ctProperties_);
+    cameraViews_->setObjectName(QStringLiteral("cameraViews"));
+    cameraViews_->setToolTip(QStringLiteral("Anatomical camera presets"));
+    meshStats_ = new QLabel(QStringLiteral("No surface"), ctProperties_);
+    meshStats_->setObjectName(QStringLiteral("meshStats"));
+    meshStats_->setWordWrap(true);
+    meshStats_->setProperty("mfRole", QStringLiteral("secondary"));
+    auto* volumeNote = new QLabel(
+        QStringLiteral("Research volume preview. Not a clinical reconstruction."), ctProperties_);
+    volumeNote->setWordWrap(true);
+    volumeNote->setProperty("mfRole", QStringLiteral("secondary"));
+    ctLayout->addWidget(volumePresets_);
+    ctLayout->addWidget(visibility);
+    ctLayout->addWidget(isoThreshold_);
+    ctLayout->addWidget(buildSurfaceButton_);
+    ctLayout->addWidget(cameraViews_);
+    ctLayout->addWidget(meshStats_);
+    ctLayout->addWidget(volumeNote);
     ctProperties_->hide();
     propertiesLayout->addWidget(propertiesBody_);
     propertiesLayout->addWidget(ctProperties_);
@@ -329,7 +416,44 @@ void WorkspaceWindow::buildDocks() {
         windowLevel_.centerHu = value;
         refreshMpr();
     });
-    propertiesDock_->setWidget(properties);
+    connect(volumePresets_, &SegmentedControl::currentIndexChanged, this, [this](int index) {
+        medforge::rendering::TransferFunction function = medforge::rendering::softTissueTransfer();
+        if (index == 1) {
+            function = medforge::rendering::lungTransfer();
+        } else if (index == 2) {
+            function = medforge::rendering::boneTransfer();
+        }
+        volumeViewport_->setTransferFunction(function);
+    });
+    connect(volumeVisibleButton_, &QPushButton::toggled, this, [this](bool checked) {
+        volumeViewport_->setVolumeVisible(checked);
+    });
+    connect(meshVisibleButton_, &QPushButton::toggled, this, [this](bool checked) {
+        if (!checked) {
+            volumeViewport_->clearMesh();
+            return;
+        }
+        refreshSurfaceView();
+    });
+    connect(clipButton_, &QPushButton::toggled, this, [this](bool) { refreshSurfaceView(); });
+    connect(buildSurfaceButton_, &QPushButton::clicked, this, [this] { buildSurface(); });
+    connect(cameraViews_, &SegmentedControl::currentIndexChanged, this, [this](int index) {
+        const medforge::rendering::AnatomicalView views[] = {
+            medforge::rendering::AnatomicalView::Anterior,
+            medforge::rendering::AnatomicalView::Posterior,
+            medforge::rendering::AnatomicalView::Left,
+            medforge::rendering::AnatomicalView::Right,
+            medforge::rendering::AnatomicalView::Superior,
+            medforge::rendering::AnatomicalView::Inferior};
+        const int clamped = std::clamp(index, 0, 5);
+        volumeViewport_->applyAnatomicalView(views[clamped], nullptr);
+    });
+    auto* propertiesScroll = new QScrollArea(propertiesDock_);
+    propertiesScroll->setObjectName(QStringLiteral("propertiesScroll"));
+    propertiesScroll->setWidgetResizable(true);
+    propertiesScroll->setFrameShape(QFrame::NoFrame);
+    propertiesScroll->setWidget(properties);
+    propertiesDock_->setWidget(propertiesScroll);
 
     tasksDock_ = makeDock(QStringLiteral("Tasks"), QStringLiteral("tasksDock"), this);
     auto* tasks = new QWidget(tasksDock_);
@@ -339,14 +463,23 @@ void WorkspaceWindow::buildDocks() {
                                     medforge::ui::tokens::space8,
                                     medforge::ui::tokens::space8);
     taskIdleLabel_ =
-        new QLabel(QStringLiteral("No background task. Import runs off the GUI thread."), tasks);
+        new QLabel(QStringLiteral(
+                       "No background task. Import and surface extraction run off the GUI thread."),
+                   tasks);
+    taskIdleLabel_->setObjectName(QStringLiteral("taskStatus"));
     taskIdleLabel_->setWordWrap(true);
     taskIdleLabel_->setProperty("mfRole", QStringLiteral("secondary"));
     taskProgress_ = new TaskProgress(tasks);
     taskProgress_->setObjectName(QStringLiteral("importProgress"));
     tasksLayout->addWidget(taskIdleLabel_);
     tasksLayout->addWidget(taskProgress_);
-    connect(taskProgress_, &TaskProgress::cancelled, this, &WorkspaceWindow::cancelImport);
+    connect(taskProgress_, &TaskProgress::cancelled, this, [this] {
+        if (surfaceThread_.joinable()) {
+            cancelSurface();
+            return;
+        }
+        cancelImport();
+    });
     tasksDock_->setWidget(tasks);
 
     auto* viewMenu = menuBar()->actions().at(1)->menu();
@@ -417,8 +550,11 @@ void WorkspaceWindow::buildViewports() {
     view3dTitle->setProperty("mfRole", QStringLiteral("section"));
     view3dTitle->setMargin(medforge::ui::tokens::space8);
     sampleViewport_ = new SampleViewport(view3d);
+    volumeViewport_ = new VolumeViewport(view3d);
+    volumeViewport_->hide();
     view3dLayout->addWidget(view3dTitle);
     view3dLayout->addWidget(sampleViewport_, 1);
+    view3dLayout->addWidget(volumeViewport_, 1);
     grid->addWidget(view3d, 1, 1);
 
     column->addWidget(researchLabel_);
@@ -475,6 +611,130 @@ void WorkspaceWindow::updateProperties() {
     propertiesBody_->setText(QStringLiteral("No selection"));
 }
 
+void WorkspaceWindow::showVolumePane(bool visible) {
+    sampleViewport_->setVisible(!visible);
+    volumeViewport_->setVisible(visible);
+}
+
+void WorkspaceWindow::shutdownSurface() {
+    ++surfaceGeneration_;
+    surfaceCancel_.cancel();
+    if (surfaceThread_.joinable()) {
+        surfaceThread_.join();
+    }
+}
+
+void WorkspaceWindow::cancelSurface() {
+    surfaceCancel_.cancel();
+}
+
+void WorkspaceWindow::refreshSurfaceView() {
+    medforge::core::Vec3 origin{};
+    medforge::core::Vec3 normal{0, 0, 1};
+    const bool clip = clipButton_->isChecked() && hasVolume_;
+    if (clip) {
+        const medforge::core::CoordinateResult lps =
+            medforge::imaging::crosshairLps(crosshair_, volume_);
+        if (lps.ok()) {
+            origin = lps.value;
+        }
+        normal = {volume_.geometry.geometry.direction(0, 2),
+                  volume_.geometry.geometry.direction(1, 2),
+                  volume_.geometry.geometry.direction(2, 2)};
+    }
+    volumeViewport_->setClipPlane(clip, origin, normal);
+    if (!hasSurface_) {
+        meshStats_->setText(QStringLiteral("No surface"));
+        surfaceRow_->hide();
+        volumeViewport_->clearMesh();
+        return;
+    }
+    const medforge::geometry::TriangleMesh shown =
+        clip ? medforge::geometry::clipHalfSpace(surfaceMesh_, origin, normal) : surfaceMesh_;
+    if (meshVisibleButton_->isChecked()) {
+        volumeViewport_->setMesh(shown);
+    } else {
+        volumeViewport_->clearMesh();
+    }
+    const medforge::geometry::MeshStatistics stats = medforge::geometry::measureMesh(shown);
+    meshStats_->setText(QStringLiteral("%1 triangles\nVolume %2 mm³\n%3 MB volume, %4 MB mesh\n%5 ms")
+                            .arg(stats.triangleCount)
+                            .arg(stats.volumeMm3, 0, 'f', 1)
+                            .arg(static_cast<double>(surfaceResult_.volumeBytes) / 1.0e6, 0, 'f', 2)
+                            .arg(static_cast<double>(surfaceResult_.meshBytes) / 1.0e6, 0, 'f', 2)
+                            .arg(surfaceResult_.elapsedMs, 0, 'f', 0));
+    surfaceRow_->setCountText(QString::number(stats.triangleCount));
+    surfaceRow_->show();
+}
+
+void WorkspaceWindow::applySurface(int generation, const medforge::rendering::SurfaceResult& result) {
+    if (surfaceThread_.joinable()) {
+        surfaceThread_.join();
+    }
+    if (closing_ || generation != surfaceGeneration_) {
+        return;
+    }
+    taskProgress_->setRunning(false);
+    taskProgress_->setPercent(0);
+    taskIdleLabel_->setText(
+        QStringLiteral("No background task. Import and surface extraction run off the GUI thread."));
+    if (result.status == medforge::rendering::SurfaceStatus::Cancelled) {
+        errorBanner_->setMessage(Banner::Severity::Notice, QStringLiteral("Surface extraction cancelled"));
+        errorBanner_->setVisible(true);
+        return;
+    }
+    surfaceResult_ = result;
+    if (result.status == medforge::rendering::SurfaceStatus::Empty) {
+        hasSurface_ = false;
+        surfaceMesh_ = {};
+        refreshSurfaceView();
+        errorBanner_->setMessage(Banner::Severity::Warning, QString::fromStdString(result.message));
+        errorBanner_->setVisible(true);
+        return;
+    }
+    if (result.status != medforge::rendering::SurfaceStatus::Ok) {
+        errorBanner_->setMessage(Banner::Severity::Error, QString::fromStdString(result.message));
+        errorBanner_->setVisible(true);
+        return;
+    }
+    hasSurface_ = true;
+    surfaceMesh_ = result.mesh;
+    refreshSurfaceView();
+    if (errorBanner_->isVisible() && errorBanner_->message().contains(QStringLiteral("surface"),
+                                                                      Qt::CaseInsensitive)) {
+        errorBanner_->hide();
+    }
+}
+
+void WorkspaceWindow::buildSurface(int delayBeforeMs) {
+    if (!hasVolume_ || actions_->phase() == WorkspaceActions::Phase::Importing ||
+        surfaceThread_.joinable()) {
+        return;
+    }
+    ++surfaceGeneration_;
+    const int generation = surfaceGeneration_;
+    surfaceCancel_ = medforge::core::CancellationSource();
+    const medforge::core::CancellationToken token = surfaceCancel_.token();
+    const double threshold = isoThreshold_->value();
+    medforge::geometry::ScalarGrid grid;
+    grid.columns = volume_.columns;
+    grid.rows = volume_.rows;
+    grid.slices = volume_.slices;
+    grid.values = volume_.hu;
+    grid.geometry = volume_.geometry.geometry;
+    taskIdleLabel_->setText(QStringLiteral("Building surface"));
+    taskProgress_->setRunning(true);
+    taskProgress_->setPercent(0);
+    surfaceThread_ = std::thread([this, generation, grid = std::move(grid), threshold, token,
+                                  delayBeforeMs] {
+        const medforge::rendering::SurfaceResult result =
+            medforge::rendering::extractIsosurface(grid, threshold, token, delayBeforeMs);
+        QMetaObject::invokeMethod(
+            this, [this, generation, result] { applySurface(generation, result); },
+            Qt::QueuedConnection);
+    });
+}
+
 void WorkspaceWindow::shutdownImport() {
     closing_ = true;
     importCancel_.cancel();
@@ -494,6 +754,7 @@ void WorkspaceWindow::importFolder(const QString& folder, int delayPerFileMs) {
     if (actions_->phase() == WorkspaceActions::Phase::Importing || importThread_.joinable()) {
         return;
     }
+    shutdownSurface();
     closing_ = false;
     importCancel_ = medforge::core::CancellationSource();
     const medforge::core::CancellationToken token = importCancel_.token();
@@ -531,6 +792,13 @@ void WorkspaceWindow::clearLoadedSeries() {
     coronalViewport_->clearImage();
     cursorLabel_->clear();
     seriesRow_->hide();
+    hasSurface_ = false;
+    surfaceMesh_ = {};
+    surfaceResult_ = {};
+    meshStats_->setText(QStringLiteral("No surface"));
+    surfaceRow_->hide();
+    volumeViewport_->clearStudy();
+    showVolumePane(false);
     studiesRow_->setCountText(QStringLiteral("0"));
 }
 
@@ -543,7 +811,8 @@ void WorkspaceWindow::applyImportResult(const medforge::imaging::ImportResult& r
     }
     taskProgress_->setRunning(false);
     taskProgress_->setPercent(0);
-    taskIdleLabel_->setText(QStringLiteral("No background task. Import runs off the GUI thread."));
+    taskIdleLabel_->setText(
+        QStringLiteral("No background task. Import and surface extraction run off the GUI thread."));
     if (result.status == medforge::imaging::ImportStatus::Cancelled) {
         if (hasVolume_) {
             actions_->showStudy(QStringLiteral("CT series  %1 slices").arg(volume_.slices));
@@ -575,10 +844,25 @@ void WorkspaceWindow::applyImportResult(const medforge::imaging::ImportResult& r
     updatingWindowLevel_ = false;
     seriesRow_->setCountText(QString::number(volume_.slices));
     seriesRow_->show();
+    hasSurface_ = false;
+    surfaceMesh_ = {};
+    surfaceResult_ = {};
+    meshStats_->setText(QStringLiteral("No surface"));
+    surfaceRow_->hide();
+    QString volumeError;
+    if (!volumeViewport_->showVolume(volume_, &volumeError)) {
+        errorBanner_->setMessage(Banner::Severity::Error, volumeError);
+        errorBanner_->setVisible(true);
+    } else {
+        volumeViewport_->setTransferFunction(medforge::rendering::softTissueTransfer());
+        showVolumePane(true);
+    }
     studiesRow_->setCountText(QStringLiteral("1"));
     actions_->showStudy(QStringLiteral("CT series  %1 slices").arg(volume_.slices));
     if (result.message.empty()) {
-        errorBanner_->hide();
+        if (volumeError.isEmpty()) {
+            errorBanner_->hide();
+        }
     } else {
         errorBanner_->setMessage(Banner::Severity::Warning, QString::fromStdString(result.message));
         errorBanner_->setVisible(true);
@@ -638,4 +922,7 @@ void WorkspaceWindow::refreshMpr() {
                               .arg(lps.value.y, 0, 'f', 2)
                               .arg(lps.value.z, 0, 'f', 2)
                               .arg(huText));
+    if (clipButton_->isChecked()) {
+        refreshSurfaceView();
+    }
 }

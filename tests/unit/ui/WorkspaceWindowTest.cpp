@@ -29,7 +29,7 @@ void WorkspaceWindowTest::titleShowsTheActiveMilestone() {
     const QString path = QDir::temp().filePath(QStringLiteral("medforge-m2-title.ini"));
     QFile::remove(path);
     WorkspaceWindow window(path);
-    QCOMPARE(window.windowTitle(), QStringLiteral("MedForge M2"));
+    QCOMPARE(window.windowTitle(), QStringLiteral("MedForge M3"));
 }
 
 void WorkspaceWindowTest::restoresHiddenDockAndResetClearsIt() {

@@ -2,7 +2,7 @@
 
 namespace medforge::rendering {
 
-// VTK pipelines arrive in M1. Rendering must not be linked into core.
+// Camera math and the VTK isosurface. Widgets stay in the UI module.
 const char* moduleName();
 
 } // namespace medforge::rendering

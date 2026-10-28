@@ -1,6 +1,8 @@
 #pragma once
 
+#include "medforge/geometry/Surface.h"
 #include "medforge/imaging/CtImport.h"
+#include "medforge/rendering/Isosurface.h"
 
 #include <QMainWindow>
 #include <thread>
@@ -14,6 +16,8 @@ class QDockWidget;
 class QLabel;
 class SampleViewport;
 class SegmentedControl;
+class VolumeViewport;
+class QPushButton;
 class TaskProgress;
 class WorkspaceActions;
 
@@ -32,6 +36,8 @@ public:
     QAction* resetLayoutAction() const;
     QAction* importCtAction() const;
     SampleViewport* sampleViewport() const;
+    VolumeViewport* volumeViewport() const;
+    QLabel* meshStatsLabel() const;
     MprViewport* axialViewport() const;
     MprViewport* sagittalViewport() const;
     MprViewport* coronalViewport() const;
@@ -43,6 +49,8 @@ public:
     void resetLayout();
     void importFolder(const QString& folder, int delayPerFileMs = 0);
     void cancelImport();
+    void buildSurface(int delayBeforeMs = 0);
+    void cancelSurface();
 
 public slots:
     void showSample();
@@ -61,6 +69,10 @@ private:
     void applyImportResult(const medforge::imaging::ImportResult& result);
     void clearLoadedSeries();
     void shutdownImport();
+    void shutdownSurface();
+    void applySurface(int generation, const medforge::rendering::SurfaceResult& result);
+    void refreshSurfaceView();
+    void showVolumePane(bool visible);
 
     QString layoutFile_;
     WorkspaceActions* actions_ = nullptr;
@@ -72,6 +84,7 @@ private:
     QAction* resetLayoutAction_ = nullptr;
     QAction* importAction_ = nullptr;
     SampleViewport* sampleViewport_ = nullptr;
+    VolumeViewport* volumeViewport_ = nullptr;
     MprViewport* axialViewport_ = nullptr;
     MprViewport* sagittalViewport_ = nullptr;
     MprViewport* coronalViewport_ = nullptr;
@@ -86,10 +99,25 @@ private:
     SegmentedControl* windowPresets_ = nullptr;
     NumericEditor* windowWidth_ = nullptr;
     NumericEditor* windowCenter_ = nullptr;
+    SegmentedControl* volumePresets_ = nullptr;
+    SegmentedControl* cameraViews_ = nullptr;
+    QPushButton* volumeVisibleButton_ = nullptr;
+    QPushButton* meshVisibleButton_ = nullptr;
+    QPushButton* clipButton_ = nullptr;
+    QPushButton* buildSurfaceButton_ = nullptr;
+    NumericEditor* isoThreshold_ = nullptr;
+    QLabel* meshStats_ = nullptr;
+    BrowserRow* surfaceRow_ = nullptr;
     TaskProgress* taskProgress_ = nullptr;
     QLabel* taskIdleLabel_ = nullptr;
     std::thread importThread_;
+    std::thread surfaceThread_;
     medforge::core::CancellationSource importCancel_;
+    medforge::core::CancellationSource surfaceCancel_;
+    int surfaceGeneration_ = 0;
+    medforge::geometry::TriangleMesh surfaceMesh_;
+    medforge::rendering::SurfaceResult surfaceResult_;
+    bool hasSurface_ = false;
     medforge::imaging::CtVolume volume_;
     medforge::imaging::MprCrosshair crosshair_;
     medforge::imaging::WindowLevel windowLevel_ = medforge::imaging::WindowLevel::softTissue();

@@ -38,6 +38,11 @@ medforge_add_test(imaging_ct_import_test
 )
 target_compile_definitions(imaging_ct_import_test PRIVATE MEDFORGE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
+medforge_add_test(geometry_surface_test
+    SOURCES geometry/SurfaceTest.cpp
+    LIBS medforge::geometry
+)
+
 medforge_add_test(core_modules_test
     SOURCES core/ModulesTest.cpp
     LIBS medforge::core medforge::imaging medforge::geometry medforge::cad medforge::rendering
@@ -59,6 +64,10 @@ medforge_add_test(ui_style_test
     SOURCES ui/StyleTest.cpp
     LIBS medforge::ui
 )
+medforge_add_test(rendering_isosurface_test
+    SOURCES rendering/IsosurfaceTest.cpp
+    LIBS medforge::rendering
+)
 medforge_add_test(rendering_camera_pose_test
     SOURCES rendering/CameraPoseTest.cpp
     LIBS medforge::rendering
@@ -69,6 +78,10 @@ medforge_add_test(ui_workspace_actions_test
 )
 medforge_add_test(ui_mpr_workspace_test
     SOURCES ui/MprWorkspaceTest.cpp
+    LIBS medforge::ui
+)
+medforge_add_test(ui_volume_workspace_test
+    SOURCES ui/VolumeWorkspaceTest.cpp
     LIBS medforge::ui
 )
 medforge_add_test(ui_workspace_window_test
