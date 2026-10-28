@@ -5,7 +5,7 @@ MedForge 0.1.0 does not vendor third-party source. The desktop build links these
 | Component | Version used in M0 | License | Notes |
 | --- | --- | --- | --- |
 | Qt | 6.12.0 | LGPL-3.0, with the Qt commercial license also offered by The Qt Company | Widgets and Test are dynamically linked. The official installer license texts are under the Qt installation `Licenses` directory. Relinking against a compatible Qt is possible because the application does not statically link Qt. |
-| MinGW-w64 GCC runtime | 13.1.0 (`mingw1310_64`) | GPL-3.0 with the GCC Runtime Library Exception | `libstdc++`, `libgcc`, and `libwinpthread` are required to run the MinGW build. |
+| Microsoft Visual C++ runtime | Universal CRT, toolset 14.51 | Microsoft Visual Studio license | The default Windows build uses this runtime. |
 | CMake | 3.27 or newer (4.4.2 used locally) | BSD-3-Clause | Build tool only. |
 | Ninja | 1.13.2 | Apache-2.0 | Build tool only. |
 | clang-format / clang-tidy | LLVM 20.1.8 | Apache-2.0 with LLVM exceptions | Development tools only. Not linked into the application. |

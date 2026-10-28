@@ -22,26 +22,25 @@ Dependency direction is one-way:
 ## Toolchain
 Pinned in `dependencies/versions.lock.json`.
 
-- C++20, CMake 3.27+, Ninja
+- C++20, CMake 3.27+. Windows uses the Visual Studio generator. Linux and CI use Ninja.
 - Qt 6.12.0 Widgets and Test
-- Windows: GCC 13.1.0 MinGW (`C:\Qt\Tools\mingw1310_64`) with Qt `mingw_64`
+- Windows: Visual Studio 2026 (MSVC) with the Qt `msvc2022_64` kit at `C:\Qt\6.12.0\msvc2022_64`
 - Linux: GCC with the Qt `gcc_64` kit. On this machine that is WSL2 Ubuntu 26.04, GCC 15.2.0, with Qt at `~/Qt/6.12.0/gcc_64`. The presets also look in `/opt/Qt/6.12.0/gcc_64`, or use `CMAKE_PREFIX_PATH`. Run them with `wsl -d Ubuntu`, because the default WSL distro is `docker-desktop`.
 - clang-format 20.1.8
 
-An MSVC Qt kit is not installed on the reference machine, so the verified Windows build is MinGW. Windows remains the primary UI target. Linux configure, build, and test were verified in WSL2 Ubuntu 26.04 with GCC 15.2.0 and Qt 6.12.0 `gcc_64`. The Linux CI job targets Ubuntu 24.04 and lists the system packages that kit needs (GLib, fontconfig, and the XCB/OpenGL libraries). The official Qt kit carries its own ICU 73 libraries.
+Local Windows builds and GitHub Actions both use MSVC with the Qt `win64_msvc2022_64` kit. The local generator is Visual Studio 2026. Windows remains the primary UI target. Linux configure, build, and test were verified in WSL2 Ubuntu 26.04 with GCC 15.2.0 and Qt 6.12.0 `gcc_64`. The Linux CI job targets Ubuntu 24.04 and lists the system packages that kit needs (GLib, fontconfig, and the XCB/OpenGL libraries). The official Qt kit carries its own ICU 73 libraries.
 
 ## Development commands
 
 Windows:
 
 ```powershell
-cmake --preset windows-mingw-debug
-cmake --build --preset windows-mingw-debug
-ctest --preset windows-mingw-debug --output-on-failure
+cmake --preset windows-msvc
+cmake --build --preset windows-msvc-debug
+ctest --preset windows-msvc-debug --output-on-failure
 
-cmake --preset windows-mingw-release
-cmake --build --preset windows-mingw-release
-ctest --preset windows-mingw-release --output-on-failure
+cmake --build --preset windows-msvc-release
+ctest --preset windows-msvc-release --output-on-failure
 ```
 
 Linux:
@@ -56,7 +55,7 @@ cmake --build --preset linux-gcc-release
 ctest --preset linux-gcc-release --output-on-failure
 ```
 
-The desktop executable is `build/<preset>/bin/medforge` (`.exe` on Windows).
+The desktop executable is `build/<preset>/bin/medforge` (`.exe` on Windows). Visual Studio builds place it in `bin/Debug` or `bin/Release`.
 
 ```text
 medforge --gallery

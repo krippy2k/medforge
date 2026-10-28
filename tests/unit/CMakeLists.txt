@@ -41,6 +41,22 @@ medforge_add_test(ui_style_test
     SOURCES ui/StyleTest.cpp
     LIBS medforge::ui
 )
+medforge_add_test(rendering_camera_pose_test
+    SOURCES rendering/CameraPoseTest.cpp
+    LIBS medforge::rendering
+)
+medforge_add_test(ui_workspace_actions_test
+    SOURCES ui/WorkspaceActionsTest.cpp
+    LIBS medforge::ui
+)
+medforge_add_test(ui_workspace_window_test
+    SOURCES ui/WorkspaceWindowTest.cpp
+    LIBS medforge::ui
+)
+medforge_add_test(ui_layout_preferences_test
+    SOURCES ui/LayoutPreferencesTest.cpp
+    LIBS medforge::ui
+)
 medforge_add_test(ui_screenshot_capture_test
     SOURCES ui/ScreenshotCaptureTest.cpp
     LIBS medforge::ui

@@ -18,21 +18,32 @@ jobs:
             | xargs -0 clang-format --dry-run --Werror --style=file
 
   windows:
-    name: Windows MinGW
+    name: Windows MSVC
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install Qt 6.12.0 MinGW
+      - name: Install Qt 6.12.0 MSVC
         uses: jurplel/install-qt-action@v4
         with:
           version: "6.12.0"
           host: windows
           target: desktop
-          arch: win64_mingw
-          tools: tools_mingw1310 tools_ninja
+          arch: win64_msvc2022_64
+          # aqt 3.3.0 requests qt6_6120/qt6_6120/Updates.xml. Since Qt 6.11 that
+          # file is published at qt6_6120/qt6_6120_msvc2022_64/Updates.xml.
+          # https://github.com/miurahr/aqtinstall/pull/1000
+          aqtsource: git+https://github.com/miurahr/aqtinstall.git@8c3695d4a4e1ceabf6a74dc6c79681656dc6b74b
           cache: true
+      - name: Prepare the MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+          # windows-latest is Visual Studio 2026. Omitting vsversion selects
+          # that install; "2022" looks only for the Visual Studio 17 tree.
       - name: Configure
         run: cmake --preset ci-ninja-debug
+        env:
+          CMAKE_PREFIX_PATH: ${{ env.QT_ROOT_DIR }}
       - name: Build
         run: cmake --build --preset ci-ninja-debug
       - name: Test
@@ -66,10 +77,13 @@ jobs:
           version: "6.12.0"
           host: linux
           target: desktop
-          arch: gcc_64
+          # aqt's package name. The kit is still installed under 6.12.0/gcc_64.
+          arch: linux_gcc_64
           cache: true
       - name: Configure
         run: cmake --preset ci-ninja-debug
+        env:
+          CMAKE_PREFIX_PATH: ${{ env.QT_ROOT_DIR }}
       - name: Build
         run: cmake --build --preset ci-ninja-debug
       - name: Test

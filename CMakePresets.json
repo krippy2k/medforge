@@ -7,40 +7,22 @@
   },
   "configurePresets": [
     {
-      "name": "windows-mingw-base",
-      "hidden": true,
-      "generator": "Ninja",
-      "description": "Qt 6.12.0 MinGW 13.1 kit installed by the official Qt installer.",
-      "environment": {
-        "PATH": "C:/Qt/Tools/mingw1310_64/bin;C:/Qt/6.12.0/mingw_64/bin;$penv{PATH}"
+      "name": "windows-msvc",
+      "displayName": "Windows MSVC",
+      "generator": "Visual Studio 18 2026",
+      "binaryDir": "${sourceDir}/build/windows-msvc",
+      "description": "Qt 6.12.0 MSVC 2022 kit with the installed Visual Studio 2026 compiler.",
+      "architecture": {
+        "value": "x64",
+        "strategy": "set"
       },
       "cacheVariables": {
-        "CMAKE_PREFIX_PATH": "C:/Qt/6.12.0/mingw_64",
-        "CMAKE_CXX_COMPILER": "C:/Qt/Tools/mingw1310_64/bin/g++.exe",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+        "CMAKE_PREFIX_PATH": "C:/Qt/6.12.0/msvc2022_64"
       },
       "condition": {
         "type": "equals",
         "lhs": "${hostSystemName}",
         "rhs": "Windows"
-      }
-    },
-    {
-      "name": "windows-mingw-debug",
-      "displayName": "Windows MinGW Debug",
-      "inherits": "windows-mingw-base",
-      "binaryDir": "${sourceDir}/build/windows-mingw-debug",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug"
-      }
-    },
-    {
-      "name": "windows-mingw-release",
-      "displayName": "Windows MinGW Release",
-      "inherits": "windows-mingw-base",
-      "binaryDir": "${sourceDir}/build/windows-mingw-release",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
       }
     },
     {
@@ -89,12 +71,14 @@
   ],
   "buildPresets": [
     {
-      "name": "windows-mingw-debug",
-      "configurePreset": "windows-mingw-debug"
+      "name": "windows-msvc-debug",
+      "configurePreset": "windows-msvc",
+      "configuration": "Debug"
     },
     {
-      "name": "windows-mingw-release",
-      "configurePreset": "windows-mingw-release"
+      "name": "windows-msvc-release",
+      "configurePreset": "windows-msvc",
+      "configuration": "Release"
     },
     {
       "name": "linux-gcc-debug",
@@ -111,24 +95,26 @@
   ],
   "testPresets": [
     {
-      "name": "windows-mingw-debug",
-      "configurePreset": "windows-mingw-debug",
+      "name": "windows-msvc-debug",
+      "configurePreset": "windows-msvc",
+      "configuration": "Debug",
       "output": {
         "outputOnFailure": true
       },
       "environment": {
-        "PATH": "C:/Qt/Tools/mingw1310_64/bin;C:/Qt/6.12.0/mingw_64/bin;$penv{PATH}",
+        "PATH": "C:/Qt/6.12.0/msvc2022_64/bin;$penv{PATH}",
         "QT_QPA_PLATFORM": "offscreen"
       }
     },
     {
-      "name": "windows-mingw-release",
-      "configurePreset": "windows-mingw-release",
+      "name": "windows-msvc-release",
+      "configurePreset": "windows-msvc",
+      "configuration": "Release",
       "output": {
         "outputOnFailure": true
       },
       "environment": {
-        "PATH": "C:/Qt/Tools/mingw1310_64/bin;C:/Qt/6.12.0/mingw_64/bin;$penv{PATH}",
+        "PATH": "C:/Qt/6.12.0/msvc2022_64/bin;$penv{PATH}",
         "QT_QPA_PLATFORM": "offscreen"
       }
     },
