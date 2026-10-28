@@ -1,13 +1,19 @@
 #include "medforge/ui/ScreenshotCapture.h"
 
+#include "medforge/imaging/DicomWrite.h"
+#include "medforge/imaging/SyntheticPhantom.h"
 #include "medforge/ui/ConfirmDialog.h"
 #include "medforge/ui/DesignTokens.h"
 #include "medforge/ui/FoundationWindow.h"
 #include "medforge/ui/GalleryWindow.h"
+#include "medforge/ui/WorkspaceActions.h"
 #include "medforge/ui/WorkspaceReference.h"
+#include "medforge/ui/WorkspaceWindow.h"
 
 #include <QApplication>
 #include <QDir>
+#include <QElapsedTimer>
+#include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
 #include <QImage>
@@ -16,6 +22,7 @@
 #include <QTextStream>
 #include <QWidget>
 #include <algorithm>
+#include <filesystem>
 
 namespace medforge::ui {
 namespace {
@@ -115,6 +122,125 @@ bool saveDialog(const QSize& canvasSize,
     return true;
 }
 
+bool waitForPhase(WorkspaceWindow& window, WorkspaceActions::Phase phase, int timeoutMs) {
+    QElapsedTimer timer;
+    timer.start();
+    while (window.actions()->phase() != phase && timer.elapsed() < timeoutMs) {
+        QApplication::processEvents(QEventLoop::AllEvents, 20);
+    }
+    return window.actions()->phase() == phase;
+}
+
+QString pathString(const std::filesystem::path& path) {
+#ifdef Q_OS_WIN
+    return QString::fromStdWString(path.wstring());
+#else
+    return QString::fromStdString(path.string());
+#endif
+}
+
+bool saveMprStates(const QString& directory,
+                   int percent,
+                   QString* error,
+                   QTextStream& manifest) {
+    const QString suffix = QStringLiteral("-1280x800-scale%1.png").arg(percent);
+    const QString layout = QDir::temp().filePath(QStringLiteral("medforge-m2-capture-layout.ini"));
+    {
+        WorkspaceWindow empty(layout);
+        if (!saveWidget(empty,
+                        QSize(1280, 800),
+                        QDir(directory).filePath(QStringLiteral("mpr-empty") + suffix),
+                        error,
+                        manifest)) {
+            return false;
+        }
+        empty.close();
+    }
+    {
+        const std::filesystem::path folder =
+            std::filesystem::temp_directory_path() / "medforge-m2-capture-invalid";
+        std::filesystem::remove_all(folder);
+        std::filesystem::create_directories(folder);
+        medforge::imaging::DicomCtInstance slice;
+        slice.status = medforge::imaging::DicomReadStatus::Ok;
+        slice.seriesInstanceUid = "1.2.826.0.1.3680043.10.543.200";
+        slice.geometry.imageOrientationPatient = {1, 0, 0, 0, 1, 0};
+        slice.geometry.rowSpacingMm = 1;
+        slice.geometry.columnSpacingMm = 1;
+        slice.rescale = medforge::imaging::Rescale{1, 0};
+        slice.rows = 2;
+        slice.columns = 2;
+        slice.storedValues = {0, 0, 0, 0};
+        std::string writeError;
+        if (!medforge::imaging::writePart10Ct(folder / "a.dcm", slice, 1, &writeError) ||
+            !medforge::imaging::writePart10Ct(folder / "b.dcm", slice, 2, &writeError)) {
+            if (error != nullptr) {
+                *error = QString::fromStdString(writeError);
+            }
+            return false;
+        }
+        WorkspaceWindow invalid(layout);
+        invalid.importFolder(pathString(folder));
+        if (!waitForPhase(invalid, WorkspaceActions::Phase::Error, 5000)) {
+            if (error != nullptr) {
+                *error = QStringLiteral("Invalid series did not report an error.");
+            }
+            return false;
+        }
+        if (!saveWidget(invalid,
+                        QSize(1280, 800),
+                        QDir(directory).filePath(QStringLiteral("mpr-invalid") + suffix),
+                        error,
+                        manifest)) {
+            return false;
+        }
+        invalid.close();
+    }
+
+    const std::filesystem::path phantom =
+        std::filesystem::temp_directory_path() / "medforge-m2-capture-phantom";
+    std::string phantomError;
+    if (!medforge::imaging::phantom::writeSyntheticAxialSeries(phantom, &phantomError)) {
+        if (error != nullptr) {
+            *error = QString::fromStdString(phantomError);
+        }
+        return false;
+    }
+    {
+        WorkspaceWindow importing(layout);
+        importing.importFolder(pathString(phantom), 250);
+        if (!saveWidget(importing,
+                        QSize(1280, 800),
+                        QDir(directory).filePath(QStringLiteral("mpr-importing") + suffix),
+                        error,
+                        manifest)) {
+            return false;
+        }
+        importing.close();
+    }
+    const QList<QSize> sizes = {QSize(1280, 800), QSize(1920, 1080), QSize(2560, 1440)};
+    for (const QSize& size : sizes) {
+        WorkspaceWindow populated(layout);
+        populated.importFolder(pathString(phantom));
+        if (!waitForPhase(populated, WorkspaceActions::Phase::Study, 5000)) {
+            if (error != nullptr) {
+                *error = QStringLiteral("Synthetic CT import did not finish.");
+            }
+            return false;
+        }
+        const QString name =
+            QStringLiteral("mpr-populated-%1x%2-scale%3.png")
+                .arg(size.width())
+                .arg(size.height())
+                .arg(percent);
+        if (!saveWidget(populated, size, QDir(directory).filePath(name), error, manifest)) {
+            return false;
+        }
+        populated.close();
+    }
+    return true;
+}
+
 } // namespace
 
 bool captureUiEvidence(const QString& directory, QString* error) {
@@ -170,7 +296,7 @@ bool captureUiEvidence(const QString& directory, QString* error) {
         return false;
     }
     foundation.close();
-    return true;
+    return saveMprStates(directory, percent, error, manifest);
 }
 
 } // namespace medforge::ui

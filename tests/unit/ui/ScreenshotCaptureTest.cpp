@@ -29,6 +29,12 @@ void ScreenshotCaptureTest::writesGalleryAndReferencePngs() {
         QStringLiteral("reference-2560x1440-scale100.png"),
         QStringLiteral("confirm-1280x800-scale100.png"),
         QStringLiteral("foundation-1280x800-scale100.png"),
+        QStringLiteral("mpr-empty-1280x800-scale100.png"),
+        QStringLiteral("mpr-invalid-1280x800-scale100.png"),
+        QStringLiteral("mpr-importing-1280x800-scale100.png"),
+        QStringLiteral("mpr-populated-1280x800-scale100.png"),
+        QStringLiteral("mpr-populated-1920x1080-scale100.png"),
+        QStringLiteral("mpr-populated-2560x1440-scale100.png"),
     };
     for (const QString& name : required) {
         const QFileInfo info(QDir(directory).filePath(name));

@@ -6,6 +6,7 @@ add_library(medforge_ui STATIC
     include/medforge/ui/SegmentedControl.h
     include/medforge/ui/SampleViewport.h
     include/medforge/ui/WorkspaceActions.h
+    include/medforge/ui/MprViewport.h
     include/medforge/ui/WorkspaceWindow.h
     src/ConfirmDialog.cpp
     src/FoundationWidgets.cpp
@@ -17,6 +18,7 @@ add_library(medforge_ui STATIC
     src/SegmentedControl.cpp
     src/GuiThread.cpp
     src/LayoutPreferences.cpp
+    src/MprViewport.cpp
     src/SampleViewport.cpp
     src/Style.cpp
     src/WorkspaceActions.cpp
@@ -26,7 +28,7 @@ add_library(medforge_ui STATIC
 add_library(medforge::ui ALIAS medforge_ui)
 
 target_include_directories(medforge_ui PUBLIC include)
-target_link_libraries(medforge_ui PUBLIC medforge::core medforge::rendering Qt6::Widgets)
+target_link_libraries(medforge_ui PUBLIC medforge::core medforge::imaging medforge::rendering Qt6::Widgets)
 target_compile_features(medforge_ui PUBLIC cxx_std_20)
 medforge_set_warnings(medforge_ui)
 

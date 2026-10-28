@@ -17,12 +17,20 @@ class WorkspaceWindowTest : public QObject {
     Q_OBJECT
 
 private slots:
+    void titleShowsTheActiveMilestone();
     void restoresHiddenDockAndResetClearsIt();
     void showSampleEnablesResetCamera();
     void showSampleKeepsTheSameNativeWindow();
     void viewportAcceptsFocus();
     void workerThreadCannotApplyAPose();
 };
+
+void WorkspaceWindowTest::titleShowsTheActiveMilestone() {
+    const QString path = QDir::temp().filePath(QStringLiteral("medforge-m2-title.ini"));
+    QFile::remove(path);
+    WorkspaceWindow window(path);
+    QCOMPARE(window.windowTitle(), QStringLiteral("MedForge M2"));
+}
 
 void WorkspaceWindowTest::restoresHiddenDockAndResetClearsIt() {
     const QString path = QDir::temp().filePath(QStringLiteral("medforge-m1-window.ini"));
