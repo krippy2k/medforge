@@ -7,7 +7,7 @@ class WorkspaceActions : public QObject {
     Q_OBJECT
 
 public:
-    enum class Phase { Empty, Ready, Error };
+    enum class Phase { Empty, Ready, Error, Importing, Study };
 
     explicit WorkspaceActions(QObject* parent = nullptr);
 
@@ -21,6 +21,10 @@ public:
     void showSample();
     bool resetCamera();
     void reportError(const QString& message);
+    void beginImport();
+    void showStudy(const QString& status);
+    void failImport(const QString& message);
+    void noteCancelled();
 
 signals:
     void phaseChanged();
@@ -28,5 +32,7 @@ signals:
 
 private:
     Phase phase_ = Phase::Empty;
+    bool importError_ = false;
     QString errorText_;
+    QString studyStatus_;
 };

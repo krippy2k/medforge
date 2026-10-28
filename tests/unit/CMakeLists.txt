@@ -20,6 +20,24 @@ medforge_add_test(core_synthetic_volume_test
 )
 target_compile_definitions(core_synthetic_volume_test PRIVATE MEDFORGE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
+medforge_add_test(imaging_ct_series_test
+    SOURCES imaging/CtSeriesTest.cpp
+    LIBS medforge::imaging
+)
+medforge_add_test(imaging_dicom_read_test
+    SOURCES imaging/DicomReadTest.cpp
+    LIBS medforge::imaging
+)
+medforge_add_test(imaging_ct_volume_test
+    SOURCES imaging/CtVolumeTest.cpp
+    LIBS medforge::imaging
+)
+medforge_add_test(imaging_ct_import_test
+    SOURCES imaging/CtImportTest.cpp
+    LIBS medforge::imaging
+)
+target_compile_definitions(imaging_ct_import_test PRIVATE MEDFORGE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+
 medforge_add_test(core_modules_test
     SOURCES core/ModulesTest.cpp
     LIBS medforge::core medforge::imaging medforge::geometry medforge::cad medforge::rendering
@@ -47,6 +65,10 @@ medforge_add_test(rendering_camera_pose_test
 )
 medforge_add_test(ui_workspace_actions_test
     SOURCES ui/WorkspaceActionsTest.cpp
+    LIBS medforge::ui
+)
+medforge_add_test(ui_mpr_workspace_test
+    SOURCES ui/MprWorkspaceTest.cpp
     LIBS medforge::ui
 )
 medforge_add_test(ui_workspace_window_test

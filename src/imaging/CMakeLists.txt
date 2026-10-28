@@ -1,4 +1,12 @@
-add_library(medforge_imaging STATIC src/Module.cpp)
+add_library(medforge_imaging STATIC
+    src/Module.cpp
+    src/CtSeries.cpp
+    src/DicomRead.cpp
+    src/DicomWrite.cpp
+    src/CtVolume.cpp
+    src/CtImport.cpp
+    src/SyntheticPhantom.cpp
+)
 add_library(medforge::imaging ALIAS medforge_imaging)
 target_include_directories(medforge_imaging PUBLIC include)
 target_link_libraries(medforge_imaging PUBLIC medforge::core)

@@ -7,7 +7,7 @@ WorkspaceActions::Phase WorkspaceActions::phase() const {
 }
 
 bool WorkspaceActions::canShowSample() const {
-    return phase_ != Phase::Ready;
+    return phase_ != Phase::Ready && phase_ != Phase::Importing;
 }
 
 bool WorkspaceActions::canResetCamera() const {
@@ -25,7 +25,11 @@ QString WorkspaceActions::statusText() const {
     case Phase::Ready:
         return QStringLiteral("Sample cube and sphere");
     case Phase::Error:
-        return QStringLiteral("Renderer error");
+        return importError_ ? QStringLiteral("Import failed") : QStringLiteral("Renderer error");
+    case Phase::Importing:
+        return QStringLiteral("Importing CT series");
+    case Phase::Study:
+        return studyStatus_;
     }
     return {};
 }
@@ -36,6 +40,7 @@ QString WorkspaceActions::errorText() const {
 
 void WorkspaceActions::showSample() {
     errorText_.clear();
+    importError_ = false;
     phase_ = Phase::Ready;
     emit phaseChanged();
 }
@@ -50,6 +55,36 @@ bool WorkspaceActions::resetCamera() {
 
 void WorkspaceActions::reportError(const QString& message) {
     errorText_ = message;
+    importError_ = false;
     phase_ = Phase::Error;
+    emit phaseChanged();
+}
+
+void WorkspaceActions::beginImport() {
+    errorText_.clear();
+    importError_ = false;
+    phase_ = Phase::Importing;
+    emit phaseChanged();
+}
+
+void WorkspaceActions::showStudy(const QString& status) {
+    errorText_.clear();
+    importError_ = false;
+    studyStatus_ = status;
+    phase_ = Phase::Study;
+    emit phaseChanged();
+}
+
+void WorkspaceActions::failImport(const QString& message) {
+    errorText_ = message;
+    importError_ = true;
+    phase_ = Phase::Error;
+    emit phaseChanged();
+}
+
+void WorkspaceActions::noteCancelled() {
+    errorText_.clear();
+    importError_ = false;
+    phase_ = Phase::Empty;
     emit phaseChanged();
 }
