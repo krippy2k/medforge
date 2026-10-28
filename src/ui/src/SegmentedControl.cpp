@@ -18,6 +18,7 @@ SegmentedControl::SegmentedControl(const QStringList& labels, QWidget* parent) :
         button->setCheckable(true);
         button->setFocusPolicy(Qt::NoFocus);
         button->setMinimumHeight(32);
+        button->setMinimumWidth(button->fontMetrics().horizontalAdvance(label) + 28);
         button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         const int captured = index;
         connect(

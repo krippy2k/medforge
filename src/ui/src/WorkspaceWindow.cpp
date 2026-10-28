@@ -14,6 +14,7 @@
 #include "medforge/ui/WorkspaceActions.h"
 
 #include <QAction>
+#include <QCheckBox>
 #include <QCloseEvent>
 #include <QHBoxLayout>
 #include <QDockWidget>
@@ -26,8 +27,10 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QFile>
 #include <QScrollArea>
 #include <QStatusBar>
+#include <QTextStream>
 #include <QToolBar>
 #include <QVBoxLayout>
 #include <cmath>
@@ -74,6 +77,7 @@ WorkspaceWindow::WorkspaceWindow(const QString& layoutFile, QWidget* parent)
         restoreGeometry(geometry);
         restoreState(state);
     }
+    propertiesDock_->setMinimumWidth(360);
     connect(actions_, &WorkspaceActions::phaseChanged, this, [this] {
         syncActions();
         updateProperties();
@@ -82,9 +86,11 @@ WorkspaceWindow::WorkspaceWindow(const QString& layoutFile, QWidget* parent)
     updateProperties();
     sampleViewport_->realizeNativeWindow();
     volumeViewport_->realizeNativeWindow();
+    loadSegmentTools();
 }
 
 WorkspaceWindow::~WorkspaceWindow() {
+    shutdownSegment();
     shutdownSurface();
     shutdownImport();
 }
@@ -202,6 +208,34 @@ void WorkspaceWindow::buildMenus() {
             importFolder(folder);
         }
     });
+    auto* saveMaskAction = fileMenu->addAction(QStringLiteral("Save &mask..."));
+    saveMaskAction->setObjectName(QStringLiteral("saveMaskAction"));
+    connect(saveMaskAction, &QAction::triggered, this, [this] {
+        const QString path = QFileDialog::getSaveFileName(
+            this, QStringLiteral("Save label mask"), QString(), QStringLiteral("MedForge mask (*.mfmask)"));
+        if (path.isEmpty()) {
+            return;
+        }
+        QString error;
+        if (!saveMask(path, &error)) {
+            errorBanner_->setMessage(Banner::Severity::Error, error);
+            errorBanner_->setVisible(true);
+        }
+    });
+    auto* loadMaskAction = fileMenu->addAction(QStringLiteral("&Load mask..."));
+    loadMaskAction->setObjectName(QStringLiteral("loadMaskAction"));
+    connect(loadMaskAction, &QAction::triggered, this, [this] {
+        const QString path = QFileDialog::getOpenFileName(
+            this, QStringLiteral("Load label mask"), QString(), QStringLiteral("MedForge mask (*.mfmask)"));
+        if (path.isEmpty()) {
+            return;
+        }
+        QString error;
+        if (!loadMask(path, &error)) {
+            errorBanner_->setMessage(Banner::Severity::Error, error);
+            errorBanner_->setVisible(true);
+        }
+    });
     fileMenu->addSeparator();
     auto* quit = fileMenu->addAction(QStringLiteral("&Exit"));
     quit->setShortcut(QKeySequence::Quit);
@@ -234,6 +268,16 @@ void WorkspaceWindow::buildMenus() {
         }
     });
     connect(resetLayoutAction_, &QAction::triggered, this, &WorkspaceWindow::resetLayout);
+
+    auto* editMenu = menuBar()->addMenu(QStringLiteral("&Edit"));
+    undoSegmentAction_ = editMenu->addAction(QStringLiteral("&Undo"));
+    undoSegmentAction_->setObjectName(QStringLiteral("undoSegment"));
+    undoSegmentAction_->setShortcut(QKeySequence::Undo);
+    redoSegmentAction_ = editMenu->addAction(QStringLiteral("&Redo"));
+    redoSegmentAction_->setObjectName(QStringLiteral("redoSegment"));
+    redoSegmentAction_->setShortcut(QKeySequence::Redo);
+    connect(undoSegmentAction_, &QAction::triggered, this, &WorkspaceWindow::undoSegment);
+    connect(redoSegmentAction_, &QAction::triggered, this, &WorkspaceWindow::redoSegment);
 
     auto* helpMenu = menuBar()->addMenu(QStringLiteral("&Help"));
     auto* about = helpMenu->addAction(QStringLiteral("&About MedForge"));
@@ -272,6 +316,10 @@ void WorkspaceWindow::buildDocks() {
     surfaceRow_->setDepth(1);
     surfaceRow_->setObjectName(QStringLiteral("surfaceRow"));
     surfaceRow_->hide();
+    segmentRow_ = new BrowserRow(QStringLiteral("Segmentation"), studies);
+    segmentRow_->setDepth(1);
+    segmentRow_->setObjectName(QStringLiteral("segmentRow"));
+    segmentRow_->hide();
     auto* sampleRow = new BrowserRow(QStringLiteral("Cube and sphere"), studies);
     sampleRow->setDepth(1);
     sampleRow->setObjectName(QStringLiteral("sampleSceneRow"));
@@ -279,6 +327,7 @@ void WorkspaceWindow::buildDocks() {
     studiesLayout->addWidget(studiesRow_);
     studiesLayout->addWidget(seriesRow_);
     studiesLayout->addWidget(surfaceRow_);
+    studiesLayout->addWidget(segmentRow_);
     studiesLayout->addWidget(sampleRow);
     studiesLayout->addStretch(1);
     studiesDock_->setWidget(studies);
@@ -375,6 +424,65 @@ void WorkspaceWindow::buildDocks() {
         QStringLiteral("Research volume preview. Not a clinical reconstruction."), ctProperties_);
     volumeNote->setWordWrap(true);
     volumeNote->setProperty("mfRole", QStringLiteral("secondary"));
+    auto* segmentNote = new QLabel(
+        QStringLiteral("Research segmentation. Not a clinical contour."), ctProperties_);
+    segmentNote->setWordWrap(true);
+    segmentNote->setProperty("mfRole", QStringLiteral("secondary"));
+    segmentTool_ = new SegmentedControl(
+        {QStringLiteral("Threshold"), QStringLiteral("Grow"), QStringLiteral("Paint"),
+         QStringLiteral("Erase")},
+        ctProperties_);
+    segmentTool_->setObjectName(QStringLiteral("segmentTool"));
+    segmentTool_->setToolTip(QStringLiteral("Segmentation tool"));
+    segmentLabel_ = new SegmentedControl({QStringLiteral("Label 1"), QStringLiteral("Label 2")},
+                                         ctProperties_);
+    segmentLabel_->setObjectName(QStringLiteral("segmentLabel"));
+    segmentLabel_->setToolTip(QStringLiteral("Selected label"));
+    segmentMin_ = new NumericEditor(ctProperties_);
+    segmentMin_->setObjectName(QStringLiteral("segmentMin"));
+    segmentMin_->setLabel(QStringLiteral("Min"));
+    segmentMin_->setUnit(QStringLiteral("HU"));
+    segmentMin_->setDecimals(0);
+    segmentMin_->setRange(-2000, 4000);
+    segmentMin_->setValue(200);
+    segmentMax_ = new NumericEditor(ctProperties_);
+    segmentMax_->setObjectName(QStringLiteral("segmentMax"));
+    segmentMax_->setLabel(QStringLiteral("Max"));
+    segmentMax_->setUnit(QStringLiteral("HU"));
+    segmentMax_->setDecimals(0);
+    segmentMax_->setRange(-2000, 4000);
+    segmentMax_->setValue(1500);
+    segmentRadius_ = new NumericEditor(ctProperties_);
+    segmentRadius_->setObjectName(QStringLiteral("segmentRadius"));
+    segmentRadius_->setLabel(QStringLiteral("Brush"));
+    segmentRadius_->setUnit(QStringLiteral("mm"));
+    segmentRadius_->setDecimals(1);
+    segmentRadius_->setRange(0, 50);
+    segmentRadius_->setValue(1);
+    segmentConnectivity_ =
+        new SegmentedControl({QStringLiteral("6-connected"), QStringLiteral("26-connected")},
+                             ctProperties_);
+    segmentConnectivity_->setObjectName(QStringLiteral("segmentConnectivity"));
+    segmentConnectivity_->setToolTip(QStringLiteral("Region-grow connectivity"));
+    segmentLimitSlice_ = new QCheckBox(QStringLiteral("Limit to axial slice"), ctProperties_);
+    segmentLimitSlice_->setObjectName(QStringLiteral("segmentLimitSlice"));
+    segmentPreviewToggle_ = new QCheckBox(QStringLiteral("Preview HU range"), ctProperties_);
+    segmentPreviewToggle_->setObjectName(QStringLiteral("segmentPreviewToggle"));
+    segmentPreview_ = new QLabel(QStringLiteral("0 voxels in range"), ctProperties_);
+    segmentPreview_->setObjectName(QStringLiteral("segmentPreview"));
+    segmentPreview_->setProperty("mfRole", QStringLiteral("secondary"));
+    segmentUnsaved_ = new QLabel(QStringLiteral("Mask saved"), ctProperties_);
+    segmentUnsaved_->setObjectName(QStringLiteral("segmentUnsaved"));
+    segmentProvenance_ = new QLabel(ctProperties_);
+    segmentProvenance_->setObjectName(QStringLiteral("segmentProvenance"));
+    segmentProvenance_->setWordWrap(true);
+    segmentProvenance_->setProperty("mfRole", QStringLiteral("secondary"));
+    applyThresholdButton_ = new QPushButton(QStringLiteral("Apply threshold"), ctProperties_);
+    applyThresholdButton_->setObjectName(QStringLiteral("applyThreshold"));
+    regionGrowButton_ = new QPushButton(QStringLiteral("Grow from crosshair"), ctProperties_);
+    regionGrowButton_->setObjectName(QStringLiteral("regionGrow"));
+    labelMeshButton_ = new QPushButton(QStringLiteral("Mesh from label"), ctProperties_);
+    labelMeshButton_->setObjectName(QStringLiteral("buildLabelMesh"));
     ctLayout->addWidget(volumePresets_);
     ctLayout->addWidget(visibility);
     ctLayout->addWidget(isoThreshold_);
@@ -382,6 +490,21 @@ void WorkspaceWindow::buildDocks() {
     ctLayout->addWidget(cameraViews_);
     ctLayout->addWidget(meshStats_);
     ctLayout->addWidget(volumeNote);
+    ctLayout->addWidget(segmentNote);
+    ctLayout->addWidget(segmentTool_);
+    ctLayout->addWidget(segmentLabel_);
+    ctLayout->addWidget(segmentMin_);
+    ctLayout->addWidget(segmentMax_);
+    ctLayout->addWidget(segmentRadius_);
+    ctLayout->addWidget(segmentConnectivity_);
+    ctLayout->addWidget(segmentLimitSlice_);
+    ctLayout->addWidget(segmentPreviewToggle_);
+    ctLayout->addWidget(segmentPreview_);
+    ctLayout->addWidget(applyThresholdButton_);
+    ctLayout->addWidget(regionGrowButton_);
+    ctLayout->addWidget(labelMeshButton_);
+    ctLayout->addWidget(segmentUnsaved_);
+    ctLayout->addWidget(segmentProvenance_);
     ctProperties_->hide();
     propertiesLayout->addWidget(propertiesBody_);
     propertiesLayout->addWidget(ctProperties_);
@@ -448,6 +571,35 @@ void WorkspaceWindow::buildDocks() {
         const int clamped = std::clamp(index, 0, 5);
         volumeViewport_->applyAnatomicalView(views[clamped], nullptr);
     });
+    connect(applyThresholdButton_, &QPushButton::clicked, this, &WorkspaceWindow::applySegmentThreshold);
+    connect(regionGrowButton_, &QPushButton::clicked, this, [this] { growFromCrosshair(); });
+    connect(labelMeshButton_, &QPushButton::clicked, this, [this] { buildLabelMesh(); });
+    connect(segmentPreviewToggle_, &QCheckBox::toggled, this, [this](bool) { refreshMpr(); });
+    const auto saveTools = [this](double) { saveSegmentTools(); };
+    connect(segmentMin_, &NumericEditor::valueChanged, this, [this](double) {
+        saveSegmentTools();
+        refreshSegmentStatus();
+        if (segmentPreviewToggle_->isChecked()) {
+            refreshMpr();
+        }
+    });
+    connect(segmentMax_, &NumericEditor::valueChanged, this, [this](double) {
+        saveSegmentTools();
+        refreshSegmentStatus();
+        if (segmentPreviewToggle_->isChecked()) {
+            refreshMpr();
+        }
+    });
+    connect(segmentRadius_, &NumericEditor::valueChanged, this, saveTools);
+    connect(segmentConnectivity_, &SegmentedControl::currentIndexChanged, this, [this](int) {
+        saveSegmentTools();
+    });
+    connect(segmentLimitSlice_, &QCheckBox::toggled, this, [this](bool) { saveSegmentTools(); });
+    connect(segmentTool_, &SegmentedControl::currentIndexChanged, this, [this](int) { saveSegmentTools(); });
+    connect(segmentLabel_, &SegmentedControl::currentIndexChanged, this, [this](int) {
+        saveSegmentTools();
+        refreshSegmentStatus();
+    });
     auto* propertiesScroll = new QScrollArea(propertiesDock_);
     propertiesScroll->setObjectName(QStringLiteral("propertiesScroll"));
     propertiesScroll->setWidgetResizable(true);
@@ -474,6 +626,10 @@ void WorkspaceWindow::buildDocks() {
     tasksLayout->addWidget(taskIdleLabel_);
     tasksLayout->addWidget(taskProgress_);
     connect(taskProgress_, &TaskProgress::cancelled, this, [this] {
+        if (segmentThread_.joinable()) {
+            cancelSegment();
+            return;
+        }
         if (surfaceThread_.joinable()) {
             cancelSurface();
             return;
@@ -530,11 +686,10 @@ void WorkspaceWindow::buildViewports() {
             refreshMpr();
         });
         connect(view, &MprViewport::imageClicked, this, [this, plane](int x, int y) {
-            if (!hasVolume_) {
-                return;
-            }
-            medforge::imaging::moveCrosshairOnPlane(crosshair_, plane, x, y, volume_);
-            refreshMpr();
+            handlePlanePointer(plane, x, y);
+        });
+        connect(view, &MprViewport::imageDragged, this, [this, plane](int x, int y) {
+            handlePlanePointer(plane, x, y);
         });
     };
     bindPlane(axialViewport_, medforge::imaging::MprPlane::Axial);
@@ -576,7 +731,7 @@ void WorkspaceWindow::applyDefaultDockPlacement() {
     addDockWidget(Qt::RightDockWidgetArea, propertiesDock_);
     addDockWidget(Qt::BottomDockWidgetArea, tasksDock_);
     studiesDock_->setMinimumWidth(180);
-    propertiesDock_->setMinimumWidth(240);
+    propertiesDock_->setMinimumWidth(360);
     studiesDock_->show();
     propertiesDock_->show();
     tasksDock_->show();
@@ -715,6 +870,7 @@ void WorkspaceWindow::buildSurface(int delayBeforeMs) {
     const int generation = surfaceGeneration_;
     surfaceCancel_ = medforge::core::CancellationSource();
     const medforge::core::CancellationToken token = surfaceCancel_.token();
+    labelMeshRequest_ = false;
     const double threshold = isoThreshold_->value();
     medforge::geometry::ScalarGrid grid;
     grid.columns = volume_.columns;
@@ -754,6 +910,7 @@ void WorkspaceWindow::importFolder(const QString& folder, int delayPerFileMs) {
     if (actions_->phase() == WorkspaceActions::Phase::Importing || importThread_.joinable()) {
         return;
     }
+    shutdownSegment();
     shutdownSurface();
     closing_ = false;
     importCancel_ = medforge::core::CancellationSource();
@@ -792,6 +949,7 @@ void WorkspaceWindow::clearLoadedSeries() {
     coronalViewport_->clearImage();
     cursorLabel_->clear();
     seriesRow_->hide();
+    resetSegment();
     hasSurface_ = false;
     surfaceMesh_ = {};
     surfaceResult_ = {};
@@ -849,6 +1007,11 @@ void WorkspaceWindow::applyImportResult(const medforge::imaging::ImportResult& r
     surfaceResult_ = {};
     meshStats_->setText(QStringLiteral("No surface"));
     surfaceRow_->hide();
+    labelMap_ = medforge::imaging::emptyLabelMap(volume_);
+    segmentHistory_ = {};
+    segmentRevision_ = 0;
+    segmentSavedRevision_ = 0;
+    refreshSegmentStatus();
     QString volumeError;
     if (!volumeViewport_->showVolume(volume_, &volumeError)) {
         errorBanner_->setMessage(Banner::Severity::Error, volumeError);
@@ -874,39 +1037,10 @@ void WorkspaceWindow::refreshMpr() {
     if (!hasVolume_) {
         return;
     }
-    const auto paint = [this](MprViewport* view, medforge::imaging::MprPlane plane, int index) {
-        const medforge::imaging::MprImage slice =
-            medforge::imaging::extractPlane(volume_, plane, index);
-        QImage image(slice.width, slice.height, QImage::Format_Grayscale8);
-        for (int y = 0; y < slice.height; ++y) {
-            uchar* line = image.scanLine(y);
-            for (int x = 0; x < slice.width; ++x) {
-                const std::size_t offset =
-                    static_cast<std::size_t>(y) * static_cast<std::size_t>(slice.width) +
-                    static_cast<std::size_t>(x);
-                line[x] = medforge::imaging::huToDisplayGray(slice.hu[offset], windowLevel_);
-            }
-        }
-        view->setImage(image);
-        const medforge::core::Vec3 spacing = volume_.geometry.geometry.spacingMm;
-        if (plane == medforge::imaging::MprPlane::Axial) {
-            view->setMillimetersPerPixel(spacing.x, spacing.y);
-        } else if (plane == medforge::imaging::MprPlane::Sagittal) {
-            view->setMillimetersPerPixel(spacing.y, spacing.z);
-        } else {
-            view->setMillimetersPerPixel(spacing.x, spacing.z);
-        }
-        const medforge::imaging::PlanePixel pixel =
-            medforge::imaging::crosshairPixel(crosshair_, plane);
-        view->setCrosshair(QPoint(pixel.x, pixel.y));
-        const medforge::imaging::ViewLabels labels =
-            medforge::imaging::orientationLabels(volume_, plane);
-        view->setOrientation(QString(QChar(labels.left)), QString(QChar(labels.right)),
-                             QString(QChar(labels.top)), QString(QChar(labels.bottom)));
-    };
-    paint(axialViewport_, medforge::imaging::MprPlane::Axial, crosshair_.k);
-    paint(sagittalViewport_, medforge::imaging::MprPlane::Sagittal, crosshair_.i);
-    paint(coronalViewport_, medforge::imaging::MprPlane::Coronal, crosshair_.j);
+    paintPlane(axialViewport_, medforge::imaging::MprPlane::Axial, crosshair_.k);
+    paintPlane(sagittalViewport_, medforge::imaging::MprPlane::Sagittal, crosshair_.i);
+    paintPlane(coronalViewport_, medforge::imaging::MprPlane::Coronal, crosshair_.j);
+    refreshSegmentStatus();
 
     const medforge::core::CoordinateResult lps =
         medforge::imaging::crosshairLps(crosshair_, volume_);
@@ -925,4 +1059,473 @@ void WorkspaceWindow::refreshMpr() {
     if (clipButton_->isChecked()) {
         refreshSurfaceView();
     }
+}
+
+namespace {
+
+QRgb tintGray(int gray, const QColor& color) {
+    const int red = (gray * 3 + color.red()) / 4;
+    const int green = (gray * 3 + color.green()) / 4;
+    const int blue = (gray * 3 + color.blue()) / 4;
+    return qRgb(red, green, blue);
+}
+
+medforge::geometry::ScalarGrid gridFromLabel(const medforge::imaging::LabelMap& map,
+                                             std::uint8_t label) {
+    medforge::geometry::ScalarGrid grid;
+    grid.columns = map.columns;
+    grid.rows = map.rows;
+    grid.slices = map.slices;
+    grid.geometry = map.geometry;
+    grid.values.resize(map.voxels.size());
+    for (std::size_t index = 0; index < map.voxels.size(); ++index) {
+        grid.values[index] = map.voxels[index] == label ? 1.0F : 0.0F;
+    }
+    return grid;
+}
+
+} // namespace
+
+void WorkspaceWindow::paintPlane(MprViewport* view, medforge::imaging::MprPlane plane, int index) {
+    const medforge::imaging::MprImage slice = medforge::imaging::extractPlane(volume_, plane, index);
+    int labelWidth = 0;
+    int labelHeight = 0;
+    std::vector<std::uint8_t> labels;
+    if (labelMap_.columns == volume_.columns) {
+        medforge::imaging::extractLabelPlane(labelMap_, plane, index, &labelWidth, &labelHeight, &labels);
+    }
+    const bool preview = segmentPreviewToggle_ != nullptr && segmentPreviewToggle_->isChecked();
+    const float minHu = segmentMin_ != nullptr ? static_cast<float>(segmentMin_->value()) : 0;
+    const float maxHu = segmentMax_ != nullptr ? static_cast<float>(segmentMax_->value()) : 0;
+    bool colored = preview;
+    for (std::uint8_t label : labels) {
+        if (label != 0) {
+            colored = true;
+            break;
+        }
+    }
+    QImage image(slice.width, slice.height, colored ? QImage::Format_RGB32 : QImage::Format_Grayscale8);
+    for (int y = 0; y < slice.height; ++y) {
+        for (int x = 0; x < slice.width; ++x) {
+            const std::size_t offset = static_cast<std::size_t>(y) * static_cast<std::size_t>(slice.width) +
+                                       static_cast<std::size_t>(x);
+            const int gray = medforge::imaging::huToDisplayGray(slice.hu[offset], windowLevel_);
+            if (!colored) {
+                image.scanLine(y)[x] = static_cast<uchar>(gray);
+                continue;
+            }
+            std::uint8_t label = offset < labels.size() ? labels[offset] : 0;
+            QColor tint;
+            if (label == 1) {
+                tint = medforge::ui::tokens::accent;
+            } else if (label == 2) {
+                tint = medforge::ui::tokens::success;
+            } else if (preview && slice.hu[offset] >= minHu && slice.hu[offset] <= maxHu) {
+                tint = medforge::ui::tokens::warning;
+            }
+            reinterpret_cast<QRgb*>(image.scanLine(y))[x] =
+                tint.isValid() ? tintGray(gray, tint) : qRgb(gray, gray, gray);
+        }
+    }
+    view->setImage(image);
+    const medforge::core::Vec3 spacing = volume_.geometry.geometry.spacingMm;
+    if (plane == medforge::imaging::MprPlane::Axial) {
+        view->setMillimetersPerPixel(spacing.x, spacing.y);
+    } else if (plane == medforge::imaging::MprPlane::Sagittal) {
+        view->setMillimetersPerPixel(spacing.y, spacing.z);
+    } else {
+        view->setMillimetersPerPixel(spacing.x, spacing.z);
+    }
+    const medforge::imaging::PlanePixel pixel = medforge::imaging::crosshairPixel(crosshair_, plane);
+    view->setCrosshair(QPoint(pixel.x, pixel.y));
+    const medforge::imaging::ViewLabels orientation = medforge::imaging::orientationLabels(volume_, plane);
+    view->setOrientation(QString(QChar(orientation.left)), QString(QChar(orientation.right)),
+                         QString(QChar(orientation.top)), QString(QChar(orientation.bottom)));
+}
+
+void WorkspaceWindow::handlePlanePointer(medforge::imaging::MprPlane plane, int x, int y) {
+    if (!hasVolume_) {
+        return;
+    }
+    medforge::imaging::moveCrosshairOnPlane(crosshair_, plane, x, y, volume_);
+    paintSegment(plane, x, y);
+    refreshMpr();
+}
+
+void WorkspaceWindow::resetSegment() {
+    labelMap_ = {};
+    segmentHistory_ = {};
+    segmentRevision_ = 0;
+    segmentSavedRevision_ = 0;
+    labelMeshRequest_ = false;
+    if (segmentRow_ != nullptr) {
+        segmentRow_->hide();
+    }
+    if (segmentProvenance_ != nullptr) {
+        segmentProvenance_->clear();
+    }
+    refreshSegmentStatus();
+}
+
+void WorkspaceWindow::commitSegmentEdit(medforge::imaging::LabelEdit edit, const char* name) {
+    if (edit.changes.empty() || !hasVolume_) {
+        return;
+    }
+    if (!segmentHistory_.execute(
+            std::make_unique<medforge::imaging::LabelMapCommand>(&labelMap_, std::move(edit), name))) {
+        return;
+    }
+    ++segmentRevision_;
+    refreshMpr();
+}
+
+void WorkspaceWindow::refreshSegmentStatus() {
+    if (undoSegmentAction_ != nullptr) {
+        undoSegmentAction_->setEnabled(segmentHistory_.canUndo());
+        redoSegmentAction_->setEnabled(segmentHistory_.canRedo());
+    }
+    if (segmentUnsaved_ == nullptr) {
+        return;
+    }
+    if (!hasVolume_) {
+        segmentUnsaved_->setText(QStringLiteral("Mask saved"));
+        segmentPreview_->setText(QStringLiteral("0 voxels in range"));
+        return;
+    }
+    segmentUnsaved_->setText(segmentUnsaved() ? QStringLiteral("Unsaved mask")
+                                              : QStringLiteral("Mask saved"));
+    const std::size_t previewCount = medforge::imaging::countInHuRange(
+        volume_, static_cast<float>(segmentMin_->value()), static_cast<float>(segmentMax_->value()));
+    segmentPreview_->setText(previewCount == 1
+                                 ? QStringLiteral("1 voxel in range")
+                                 : QStringLiteral("%1 voxels in range").arg(previewCount));
+    const std::size_t labeled = medforge::imaging::countLabel(labelMap_, 1) +
+                                medforge::imaging::countLabel(labelMap_, 2);
+    segmentRow_->setCountText(QString::number(labeled));
+    segmentRow_->setVisible(labeled > 0 || segmentUnsaved());
+}
+
+void WorkspaceWindow::saveSegmentTools() {
+    if (segmentMin_ == nullptr) {
+        return;
+    }
+    QFile file(layoutFile_ + QStringLiteral(".segmentation.ini"));
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+        return;
+    }
+    QTextStream out(&file);
+    out << "minHu=" << segmentMin_->value() << "\n";
+    out << "maxHu=" << segmentMax_->value() << "\n";
+    out << "radiusMm=" << segmentRadius_->value() << "\n";
+    out << "tool=" << segmentTool_->currentIndex() << "\n";
+    out << "label=" << segmentLabel_->currentIndex() << "\n";
+    out << "connectivity=" << segmentConnectivity_->currentIndex() << "\n";
+    out << "limitSlice=" << (segmentLimitSlice_->isChecked() ? 1 : 0) << "\n";
+}
+
+void WorkspaceWindow::loadSegmentTools() {
+    QFile file(layoutFile_ + QStringLiteral(".segmentation.ini"));
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        refreshSegmentStatus();
+        return;
+    }
+    double minHu = segmentMin_->value();
+    double maxHu = segmentMax_->value();
+    double radius = segmentRadius_->value();
+    int tool = segmentTool_->currentIndex();
+    int label = segmentLabel_->currentIndex();
+    int connectivity = segmentConnectivity_->currentIndex();
+    bool limitSlice = segmentLimitSlice_->isChecked();
+    while (!file.atEnd()) {
+        const QString line = QString::fromUtf8(file.readLine()).trimmed();
+        const int split = line.indexOf(QLatin1Char('='));
+        if (split <= 0) {
+            continue;
+        }
+        const QString key = line.left(split);
+        const QString value = line.mid(split + 1);
+        if (key == QLatin1String("minHu")) {
+            minHu = value.toDouble();
+        } else if (key == QLatin1String("maxHu")) {
+            maxHu = value.toDouble();
+        } else if (key == QLatin1String("radiusMm")) {
+            radius = value.toDouble();
+        } else if (key == QLatin1String("tool")) {
+            tool = value.toInt();
+        } else if (key == QLatin1String("label")) {
+            label = value.toInt();
+        } else if (key == QLatin1String("connectivity")) {
+            connectivity = value.toInt();
+        } else if (key == QLatin1String("limitSlice")) {
+            limitSlice = value.toInt() != 0;
+        }
+    }
+    segmentMin_->setValue(minHu);
+    segmentMax_->setValue(maxHu);
+    segmentRadius_->setValue(radius);
+    segmentTool_->setCurrentIndex(tool);
+    segmentLabel_->setCurrentIndex(label);
+    segmentConnectivity_->setCurrentIndex(connectivity);
+    segmentLimitSlice_->setChecked(limitSlice);
+    refreshSegmentStatus();
+}
+
+void WorkspaceWindow::shutdownSegment() {
+    ++segmentGeneration_;
+    segmentCancel_.cancel();
+    if (segmentThread_.joinable()) {
+        segmentThread_.join();
+    }
+}
+
+void WorkspaceWindow::cancelSegment() {
+    segmentCancel_.cancel();
+}
+
+void WorkspaceWindow::applySegmentThreshold() {
+    if (!hasVolume_) {
+        return;
+    }
+    if (labelMap_.columns != volume_.columns) {
+        labelMap_ = medforge::imaging::emptyLabelMap(volume_);
+    }
+    const std::uint8_t label = static_cast<std::uint8_t>(segmentLabel_->currentIndex() + 1);
+    commitSegmentEdit(medforge::imaging::thresholdEdit(volume_, labelMap_, label,
+                                                       static_cast<float>(segmentMin_->value()),
+                                                       static_cast<float>(segmentMax_->value())),
+                      "threshold");
+}
+
+void WorkspaceWindow::growFromCrosshair(int delayBeforeMs) {
+    if (!hasVolume_ || segmentThread_.joinable() || surfaceThread_.joinable()) {
+        return;
+    }
+    if (labelMap_.columns != volume_.columns) {
+        labelMap_ = medforge::imaging::emptyLabelMap(volume_);
+    }
+    ++segmentGeneration_;
+    const int generation = segmentGeneration_;
+    segmentCancel_ = medforge::core::CancellationSource();
+    const medforge::core::CancellationToken token = segmentCancel_.token();
+    medforge::imaging::IndexBounds bounds;
+    if (segmentLimitSlice_->isChecked()) {
+        bounds.limited = true;
+        bounds.iMin = 0;
+        bounds.iMax = volume_.columns - 1;
+        bounds.jMin = 0;
+        bounds.jMax = volume_.rows - 1;
+        bounds.kMin = crosshair_.k;
+        bounds.kMax = crosshair_.k;
+    }
+    const medforge::imaging::CtVolume volume = volume_;
+    const medforge::imaging::LabelMap map = labelMap_;
+    const int seedI = crosshair_.i;
+    const int seedJ = crosshair_.j;
+    const int seedK = crosshair_.k;
+    const auto label = static_cast<std::uint8_t>(segmentLabel_->currentIndex() + 1);
+    const float minHu = static_cast<float>(segmentMin_->value());
+    const float maxHu = static_cast<float>(segmentMax_->value());
+    const medforge::imaging::Connectivity connectivity =
+        segmentConnectivity_->currentIndex() == 0 ? medforge::imaging::Connectivity::Faces6
+                                                  : medforge::imaging::Connectivity::Neighborhood26;
+    taskIdleLabel_->setText(QStringLiteral("Growing region"));
+    taskProgress_->setRunning(true);
+    taskProgress_->setPercent(0);
+    segmentThread_ = std::thread([this, generation, volume, map, seedI, seedJ, seedK, label, minHu,
+                                  maxHu, connectivity, bounds, token, delayBeforeMs] {
+        const medforge::imaging::SegmentResult result = medforge::imaging::regionGrowEdit(
+            volume, map, seedI, seedJ, seedK, label, minHu, maxHu, connectivity, bounds, token,
+            delayBeforeMs);
+        QMetaObject::invokeMethod(
+            this, [this, generation, result] { applyGrow(generation, result); }, Qt::QueuedConnection);
+    });
+}
+
+void WorkspaceWindow::applyGrow(int generation, const medforge::imaging::SegmentResult& result) {
+    if (segmentThread_.joinable()) {
+        segmentThread_.join();
+    }
+    if (closing_ || generation != segmentGeneration_) {
+        return;
+    }
+    taskProgress_->setRunning(false);
+    taskProgress_->setPercent(0);
+    taskIdleLabel_->setText(
+        QStringLiteral("No background task. Import and surface extraction run off the GUI thread."));
+    if (result.cancelled) {
+        errorBanner_->setMessage(Banner::Severity::Notice, QStringLiteral("Segmentation cancelled"));
+        errorBanner_->setVisible(true);
+        return;
+    }
+    if (result.edit.changes.empty()) {
+        errorBanner_->setMessage(Banner::Severity::Warning,
+                                 QString::fromStdString(result.message.empty() ? "Nothing to segment"
+                                                                               : result.message));
+        errorBanner_->setVisible(true);
+        return;
+    }
+    commitSegmentEdit(result.edit, "grow");
+    if (errorBanner_->isVisible() &&
+        errorBanner_->message().contains(QStringLiteral("Seed"), Qt::CaseInsensitive)) {
+        errorBanner_->hide();
+    }
+}
+
+void WorkspaceWindow::paintSegment(medforge::imaging::MprPlane plane, int x, int y) {
+    if (!hasVolume_ || segmentTool_ == nullptr) {
+        return;
+    }
+    const int tool = segmentTool_->currentIndex();
+    if (tool != 2 && tool != 3) {
+        return;
+    }
+    if (labelMap_.columns != volume_.columns) {
+        labelMap_ = medforge::imaging::emptyLabelMap(volume_);
+    }
+    medforge::imaging::BrushStamp stamp;
+    stamp.plane = plane;
+    stamp.x = x;
+    stamp.y = y;
+    stamp.radiusMm = segmentRadius_->value();
+    stamp.label = tool == 3 ? 0 : static_cast<std::uint8_t>(segmentLabel_->currentIndex() + 1);
+    if (plane == medforge::imaging::MprPlane::Axial) {
+        stamp.slice = crosshair_.k;
+    } else if (plane == medforge::imaging::MprPlane::Sagittal) {
+        stamp.slice = crosshair_.i;
+    } else {
+        stamp.slice = crosshair_.j;
+    }
+    commitSegmentEdit(medforge::imaging::brushEdit(labelMap_, stamp), tool == 3 ? "erase" : "paint");
+}
+
+void WorkspaceWindow::undoSegment() {
+    if (!segmentHistory_.undo()) {
+        return;
+    }
+    --segmentRevision_;
+    refreshMpr();
+}
+
+void WorkspaceWindow::redoSegment() {
+    if (!segmentHistory_.redo()) {
+        return;
+    }
+    ++segmentRevision_;
+    refreshMpr();
+}
+
+bool WorkspaceWindow::saveMask(const QString& path, QString* error) {
+    if (!hasVolume_) {
+        if (error != nullptr) {
+            *error = QStringLiteral("Import a CT series before saving a mask");
+        }
+        return false;
+    }
+    std::string message;
+    if (!medforge::imaging::saveLabelMap(labelMap_, folderPath(path), &message)) {
+        if (error != nullptr) {
+            *error = QString::fromStdString(message);
+        }
+        return false;
+    }
+    segmentSavedRevision_ = segmentRevision_;
+    refreshSegmentStatus();
+    return true;
+}
+
+bool WorkspaceWindow::loadMask(const QString& path, QString* error) {
+    if (!hasVolume_) {
+        if (error != nullptr) {
+            *error = QStringLiteral("Import a CT series before loading a mask");
+        }
+        return false;
+    }
+    medforge::imaging::LabelMap loaded;
+    std::string message;
+    if (!medforge::imaging::loadLabelMap(folderPath(path), &loaded, &message)) {
+        if (error != nullptr) {
+            *error = QString::fromStdString(message);
+        }
+        return false;
+    }
+    if (loaded.seriesInstanceUid != volume_.seriesInstanceUid || loaded.columns != volume_.columns ||
+        loaded.rows != volume_.rows || loaded.slices != volume_.slices) {
+        if (error != nullptr) {
+            *error = QStringLiteral("Mask does not match this series");
+        }
+        return false;
+    }
+    segmentHistory_ = {};
+    labelMap_ = std::move(loaded);
+    segmentRevision_ = 0;
+    segmentSavedRevision_ = 0;
+    refreshMpr();
+    return true;
+}
+
+void WorkspaceWindow::focusLabeledVoxel() {
+    if (!hasVolume_ || segmentLabel_ == nullptr) {
+        return;
+    }
+    const auto label = static_cast<std::uint8_t>(segmentLabel_->currentIndex() + 1);
+    for (int k = 0; k < labelMap_.slices; ++k) {
+        for (int j = 0; j < labelMap_.rows; ++j) {
+            for (int i = 0; i < labelMap_.columns; ++i) {
+                if (labelMap_.at(i, j, k) != label) {
+                    continue;
+                }
+                crosshair_.i = i;
+                crosshair_.j = j;
+                crosshair_.k = k;
+                refreshMpr();
+                return;
+            }
+        }
+    }
+}
+
+void WorkspaceWindow::buildLabelMesh(int delayBeforeMs) {
+    if (!hasVolume_ || actions_->phase() == WorkspaceActions::Phase::Importing ||
+        surfaceThread_.joinable() || segmentThread_.joinable()) {
+        return;
+    }
+    const auto label = static_cast<std::uint8_t>(segmentLabel_->currentIndex() + 1);
+    if (medforge::imaging::countLabel(labelMap_, label) == 0) {
+        errorBanner_->setMessage(Banner::Severity::Warning, QStringLiteral("Label is empty"));
+        errorBanner_->setVisible(true);
+        return;
+    }
+    ++surfaceGeneration_;
+    const int generation = surfaceGeneration_;
+    surfaceCancel_ = medforge::core::CancellationSource();
+    const medforge::core::CancellationToken token = surfaceCancel_.token();
+    labelMeshRequest_ = true;
+    medforge::geometry::ScalarGrid grid = gridFromLabel(labelMap_, label);
+    taskIdleLabel_->setText(QStringLiteral("Building surface"));
+    taskProgress_->setRunning(true);
+    taskProgress_->setPercent(0);
+    surfaceThread_ = std::thread([this, generation, grid = std::move(grid), token, delayBeforeMs, label] {
+        const medforge::rendering::SurfaceResult result =
+            medforge::rendering::extractIsosurface(grid, 0.5, token, delayBeforeMs);
+        QMetaObject::invokeMethod(
+            this,
+            [this, generation, result, label] {
+                applySurface(generation, result);
+                if (result.status == medforge::rendering::SurfaceStatus::Ok && labelMeshRequest_) {
+                    segmentProvenance_->setText(
+                        QStringLiteral("Label %1 of %2")
+                            .arg(label)
+                            .arg(QString::fromStdString(volume_.seriesInstanceUid)));
+                }
+            },
+            Qt::QueuedConnection);
+    });
+}
+
+bool WorkspaceWindow::segmentUnsaved() const {
+    return segmentRevision_ != segmentSavedRevision_;
+}
+
+int WorkspaceWindow::labelAt(int i, int j, int k) const {
+    return labelMap_.at(i, j, k);
 }

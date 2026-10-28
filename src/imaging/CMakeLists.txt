@@ -6,6 +6,7 @@ add_library(medforge_imaging STATIC
     src/CtVolume.cpp
     src/CtImport.cpp
     src/SyntheticPhantom.cpp
+    src/LabelMap.cpp
 )
 add_library(medforge::imaging ALIAS medforge_imaging)
 target_include_directories(medforge_imaging PUBLIC include)

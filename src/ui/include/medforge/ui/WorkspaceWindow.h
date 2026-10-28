@@ -1,7 +1,9 @@
 #pragma once
 
+#include "medforge/core/CommandHistory.h"
 #include "medforge/geometry/Surface.h"
 #include "medforge/imaging/CtImport.h"
+#include "medforge/imaging/LabelMap.h"
 #include "medforge/rendering/Isosurface.h"
 
 #include <QMainWindow>
@@ -17,6 +19,7 @@ class QLabel;
 class SampleViewport;
 class SegmentedControl;
 class VolumeViewport;
+class QCheckBox;
 class QPushButton;
 class TaskProgress;
 class WorkspaceActions;
@@ -51,6 +54,18 @@ public:
     void cancelImport();
     void buildSurface(int delayBeforeMs = 0);
     void cancelSurface();
+    void applySegmentThreshold();
+    void growFromCrosshair(int delayBeforeMs = 0);
+    void cancelSegment();
+    void paintSegment(medforge::imaging::MprPlane plane, int x, int y);
+    void undoSegment();
+    void redoSegment();
+    bool saveMask(const QString& path, QString* error);
+    bool loadMask(const QString& path, QString* error);
+    void buildLabelMesh(int delayBeforeMs = 0);
+    void focusLabeledVoxel();
+    bool segmentUnsaved() const;
+    int labelAt(int i, int j, int k) const;
 
 public slots:
     void showSample();
@@ -73,6 +88,15 @@ private:
     void applySurface(int generation, const medforge::rendering::SurfaceResult& result);
     void refreshSurfaceView();
     void showVolumePane(bool visible);
+    void resetSegment();
+    void commitSegmentEdit(medforge::imaging::LabelEdit edit, const char* name);
+    void refreshSegmentStatus();
+    void saveSegmentTools();
+    void loadSegmentTools();
+    void shutdownSegment();
+    void applyGrow(int generation, const medforge::imaging::SegmentResult& result);
+    void paintPlane(MprViewport* view, medforge::imaging::MprPlane plane, int index);
+    void handlePlanePointer(medforge::imaging::MprPlane plane, int x, int y);
 
     QString layoutFile_;
     WorkspaceActions* actions_ = nullptr;
@@ -108,6 +132,23 @@ private:
     NumericEditor* isoThreshold_ = nullptr;
     QLabel* meshStats_ = nullptr;
     BrowserRow* surfaceRow_ = nullptr;
+    BrowserRow* segmentRow_ = nullptr;
+    SegmentedControl* segmentTool_ = nullptr;
+    SegmentedControl* segmentLabel_ = nullptr;
+    SegmentedControl* segmentConnectivity_ = nullptr;
+    NumericEditor* segmentMin_ = nullptr;
+    NumericEditor* segmentMax_ = nullptr;
+    NumericEditor* segmentRadius_ = nullptr;
+    QCheckBox* segmentLimitSlice_ = nullptr;
+    QCheckBox* segmentPreviewToggle_ = nullptr;
+    QLabel* segmentPreview_ = nullptr;
+    QLabel* segmentUnsaved_ = nullptr;
+    QLabel* segmentProvenance_ = nullptr;
+    QPushButton* applyThresholdButton_ = nullptr;
+    QPushButton* regionGrowButton_ = nullptr;
+    QPushButton* labelMeshButton_ = nullptr;
+    QAction* undoSegmentAction_ = nullptr;
+    QAction* redoSegmentAction_ = nullptr;
     TaskProgress* taskProgress_ = nullptr;
     QLabel* taskIdleLabel_ = nullptr;
     std::thread importThread_;
@@ -119,6 +160,14 @@ private:
     medforge::rendering::SurfaceResult surfaceResult_;
     bool hasSurface_ = false;
     medforge::imaging::CtVolume volume_;
+    medforge::imaging::LabelMap labelMap_;
+    medforge::core::CommandHistory segmentHistory_;
+    int segmentRevision_ = 0;
+    int segmentSavedRevision_ = 0;
+    std::thread segmentThread_;
+    medforge::core::CancellationSource segmentCancel_;
+    int segmentGeneration_ = 0;
+    bool labelMeshRequest_ = false;
     medforge::imaging::MprCrosshair crosshair_;
     medforge::imaging::WindowLevel windowLevel_ = medforge::imaging::WindowLevel::softTissue();
     bool hasVolume_ = false;

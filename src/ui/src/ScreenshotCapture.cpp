@@ -8,6 +8,7 @@
 #include "medforge/ui/GalleryWindow.h"
 #include "medforge/ui/FoundationWidgets.h"
 #include "medforge/ui/NumericEditor.h"
+#include "medforge/ui/SegmentedControl.h"
 #include "medforge/ui/VolumeViewport.h"
 #include "medforge/ui/WorkspaceActions.h"
 #include "medforge/ui/WorkspaceReference.h"
@@ -15,6 +16,8 @@
 
 #include <QLabel>
 #include <QPushButton>
+#include <QScrollArea>
+#include <QScrollBar>
 
 #include <QApplication>
 #include <QDir>
@@ -63,11 +66,16 @@ bool saveWidget(QWidget& widget,
                 const QSize& logicalSize,
                 const QString& path,
                 QString* error,
-                QTextStream& manifest) {
+                QTextStream& manifest,
+                const std::function<void()>& beforeGrab = {}) {
     widget.setMinimumSize(0, 0);
     widget.resize(logicalSize);
     widget.show();
     QApplication::processEvents();
+    if (beforeGrab) {
+        beforeGrab();
+        QApplication::processEvents();
+    }
     widget.repaint();
     QApplication::processEvents();
     const QPixmap pixmap = widget.grab();
@@ -388,6 +396,161 @@ bool saveVolumeStates(const QString& directory,
     return true;
 }
 
+void revealSegmentControls(WorkspaceWindow& window) {
+    auto* scroll = window.findChild<QScrollArea*>(QStringLiteral("propertiesScroll"));
+    auto* anchor = window.findChild<QWidget*>(QStringLiteral("segmentTool"));
+    if (scroll == nullptr || anchor == nullptr || scroll->widget() == nullptr) {
+        return;
+    }
+    const QPoint top = anchor->mapTo(scroll->widget(), QPoint(0, 0));
+    scroll->verticalScrollBar()->setValue(top.y());
+}
+
+bool saveSegmentStates(const QString& directory,
+                       int percent,
+                       QString* error,
+                       QTextStream& manifest) {
+    const std::filesystem::path phantom =
+        std::filesystem::temp_directory_path() / "medforge-m4-capture-phantom";
+    std::string phantomError;
+    if (!medforge::imaging::phantom::writeSyntheticAxialSeries(phantom, &phantomError)) {
+        if (error != nullptr) {
+            *error = QString::fromStdString(phantomError);
+        }
+        return false;
+    }
+    const QString layout = QDir::temp().filePath(QStringLiteral("medforge-m4-capture-layout.ini"));
+    const QString path = pathString(phantom);
+    const QList<QSize> sizes = {QSize(1280, 800), QSize(1920, 1080), QSize(2560, 1440)};
+    for (const QSize& size : sizes) {
+        WorkspaceWindow segmented(layout);
+        segmented.importFolder(path);
+        if (!waitForPhase(segmented, WorkspaceActions::Phase::Study, 5000)) {
+            if (error != nullptr) {
+                *error = QStringLiteral("Segmentation capture import did not finish.");
+            }
+            return false;
+        }
+        auto* labels = segmented.findChild<SegmentedControl*>(QStringLiteral("segmentLabel"));
+        if (labels == nullptr || !labels->setCurrentIndex(0)) {
+            if (error != nullptr) {
+                *error = QStringLiteral("Label control is missing.");
+            }
+            return false;
+        }
+        segmented.applySegmentThreshold();
+        segmented.focusLabeledVoxel();
+        const QString name = QStringLiteral("segment-overlay-%1x%2-scale%3.png")
+                                 .arg(size.width())
+                                 .arg(size.height())
+                                 .arg(percent);
+        if (!saveWidget(segmented, size, QDir(directory).filePath(name), error, manifest,
+                        [&segmented] { revealSegmentControls(segmented); })) {
+            return false;
+        }
+        segmented.close();
+    }
+    {
+        WorkspaceWindow otherLabel(layout);
+        otherLabel.importFolder(path);
+        if (!waitForPhase(otherLabel, WorkspaceActions::Phase::Study, 5000)) {
+            if (error != nullptr) {
+                *error = QStringLiteral("Segmentation capture import did not finish.");
+            }
+            return false;
+        }
+        auto* labels = otherLabel.findChild<SegmentedControl*>(QStringLiteral("segmentLabel"));
+        if (labels == nullptr || !labels->setCurrentIndex(0)) {
+            if (error != nullptr) {
+                *error = QStringLiteral("Label control is missing.");
+            }
+            return false;
+        }
+        otherLabel.applySegmentThreshold();
+        otherLabel.focusLabeledVoxel();
+        if (!labels->setCurrentIndex(1)) {
+            if (error != nullptr) {
+                *error = QStringLiteral("Label control is missing.");
+            }
+            return false;
+        }
+        if (!saveWidget(otherLabel,
+                        QSize(1280, 800),
+                        QDir(directory).filePath(
+                            QStringLiteral("segment-label2-1280x800-scale%1.png").arg(percent)),
+                        error,
+                        manifest,
+                        [&otherLabel] { revealSegmentControls(otherLabel); })) {
+            return false;
+        }
+        otherLabel.close();
+    }
+    for (const QSize& size : sizes) {
+        WorkspaceWindow meshed(layout);
+        meshed.importFolder(path);
+        if (!waitForPhase(meshed, WorkspaceActions::Phase::Study, 5000)) {
+            if (error != nullptr) {
+                *error = QStringLiteral("Segmentation capture import did not finish.");
+            }
+            return false;
+        }
+        auto* labels = meshed.findChild<SegmentedControl*>(QStringLiteral("segmentLabel"));
+        if (labels == nullptr || !labels->setCurrentIndex(0)) {
+            if (error != nullptr) {
+                *error = QStringLiteral("Label control is missing.");
+            }
+            return false;
+        }
+        meshed.applySegmentThreshold();
+        meshed.focusLabeledVoxel();
+        meshed.buildLabelMesh();
+        const bool ready = waitUntil(5000, [&meshed] {
+            return meshed.volumeViewport()->meshTriangleCount() > 0 ||
+                   meshed.errorBanner()->message().contains(QStringLiteral("VTK")) ||
+                   meshed.errorBanner()->message().contains(QStringLiteral("empty"));
+        });
+        if (!ready) {
+            if (error != nullptr) {
+                *error = QStringLiteral("Label mesh did not finish.");
+            }
+            return false;
+        }
+        const QString name = QStringLiteral("segment-mesh-%1x%2-scale%3.png")
+                                 .arg(size.width())
+                                 .arg(size.height())
+                                 .arg(percent);
+        if (!saveWidget(meshed, size, QDir(directory).filePath(name), error, manifest,
+                        [&meshed] { revealSegmentControls(meshed); })) {
+            return false;
+        }
+        meshed.close();
+    }
+    WorkspaceWindow missed(layout);
+    missed.importFolder(path);
+    if (!waitForPhase(missed, WorkspaceActions::Phase::Study, 5000)) {
+        if (error != nullptr) {
+            *error = QStringLiteral("Segmentation capture import did not finish.");
+        }
+        return false;
+    }
+    missed.growFromCrosshair();
+    if (!waitUntil(5000, [&missed] {
+            return !missed.errorBanner()->isHidden() &&
+                   missed.errorBanner()->message().contains(QStringLiteral("Seed"));
+        })) {
+        if (error != nullptr) {
+            *error = QStringLiteral("Crosshair grow did not report the seed.");
+        }
+        return false;
+    }
+    return saveWidget(missed,
+                      QSize(1280, 800),
+                      QDir(directory).filePath(QStringLiteral("segment-seed-1280x800-scale%1.png").arg(percent)),
+                      error,
+                      manifest,
+                      [&missed] { revealSegmentControls(missed); });
+}
+
 } // namespace
 
 bool captureUiEvidence(const QString& directory, QString* error) {
@@ -444,7 +607,8 @@ bool captureUiEvidence(const QString& directory, QString* error) {
     }
     foundation.close();
     return saveMprStates(directory, percent, error, manifest) &&
-           saveVolumeStates(directory, percent, error, manifest);
+           saveVolumeStates(directory, percent, error, manifest) &&
+           saveSegmentStates(directory, percent, error, manifest);
 }
 
 } // namespace medforge::ui

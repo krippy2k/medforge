@@ -36,6 +36,10 @@ medforge_add_test(imaging_ct_import_test
     SOURCES imaging/CtImportTest.cpp
     LIBS medforge::imaging
 )
+medforge_add_test(imaging_label_map_test
+    SOURCES imaging/LabelMapTest.cpp
+    LIBS medforge::imaging
+)
 target_compile_definitions(imaging_ct_import_test PRIVATE MEDFORGE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
 medforge_add_test(geometry_surface_test
@@ -82,6 +86,10 @@ medforge_add_test(ui_mpr_workspace_test
 )
 medforge_add_test(ui_volume_workspace_test
     SOURCES ui/VolumeWorkspaceTest.cpp
+    LIBS medforge::ui
+)
+medforge_add_test(ui_segmentation_workspace_test
+    SOURCES ui/SegmentationWorkspaceTest.cpp
     LIBS medforge::ui
 )
 medforge_add_test(ui_workspace_window_test

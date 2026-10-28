@@ -34,11 +34,13 @@ public:
 signals:
     void sliceScrolled(int steps);
     void imageClicked(int x, int y);
+    void imageDragged(int x, int y);
 
 protected:
     void paintEvent(QPaintEvent* event) override;
     void wheelEvent(QWheelEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
 
 private:

@@ -178,6 +178,18 @@ void MprViewport::mousePressEvent(QMouseEvent* event) {
     event->accept();
 }
 
+void MprViewport::mouseMoveEvent(QMouseEvent* event) {
+    if ((event->buttons() & Qt::LeftButton) == 0) {
+        QWidget::mouseMoveEvent(event);
+        return;
+    }
+    const QPoint pixel = imagePixelAt(event->position().toPoint());
+    if (pixel.x() >= 0) {
+        emit imageDragged(pixel.x(), pixel.y());
+    }
+    event->accept();
+}
+
 void MprViewport::keyPressEvent(QKeyEvent* event) {
     if (!hasImage()) {
         QWidget::keyPressEvent(event);
