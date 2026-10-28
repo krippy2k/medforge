@@ -23,8 +23,13 @@
 #include <QGridLayout>
 #include <QImage>
 #include <QKeySequence>
+#include <QAbstractItemView>
+#include <QHeaderView>
 #include <QLabel>
+#include <QLineEdit>
+#include <QListWidget>
 #include <QMenuBar>
+#include <QTableWidget>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QFile>
@@ -45,6 +50,40 @@ QDockWidget* makeDock(const QString& title, const QString& objectName, QWidget* 
                           Qt::BottomDockWidgetArea);
     return dock;
 }
+
+class MeasureEditCommand : public medforge::core::Command {
+public:
+    MeasureEditCommand(medforge::geometry::MeasureDocument* target,
+                       medforge::geometry::MeasureDocument before,
+                       medforge::geometry::MeasureDocument after)
+        : target_(target), before_(std::move(before)), after_(std::move(after)) {}
+
+    const char* name() const override { return "measure"; }
+
+    bool execute() override {
+        if (applied_ || target_ == nullptr) {
+            return false;
+        }
+        *target_ = after_;
+        applied_ = true;
+        return true;
+    }
+
+    bool undo() override {
+        if (target_ == nullptr) {
+            return false;
+        }
+        *target_ = before_;
+        applied_ = false;
+        return true;
+    }
+
+private:
+    medforge::geometry::MeasureDocument* target_ = nullptr;
+    medforge::geometry::MeasureDocument before_;
+    medforge::geometry::MeasureDocument after_;
+    bool applied_ = false;
+};
 
 std::filesystem::path folderPath(const QString& folder) {
 #ifdef Q_OS_WIN
@@ -232,6 +271,51 @@ void WorkspaceWindow::buildMenus() {
         }
         QString error;
         if (!loadMask(path, &error)) {
+            errorBanner_->setMessage(Banner::Severity::Error, error);
+            errorBanner_->setVisible(true);
+        }
+    });
+    auto* saveMeasuresAction = fileMenu->addAction(QStringLiteral("Save &measurements..."));
+    saveMeasuresAction->setObjectName(QStringLiteral("saveMeasuresAction"));
+    connect(saveMeasuresAction, &QAction::triggered, this, [this] {
+        const QString path = QFileDialog::getSaveFileName(
+            this, QStringLiteral("Save measurements"), QString(),
+            QStringLiteral("MedForge measurements (*.mfmeasure)"));
+        if (path.isEmpty()) {
+            return;
+        }
+        QString error;
+        if (!saveMeasures(path, &error)) {
+            errorBanner_->setMessage(Banner::Severity::Error, error);
+            errorBanner_->setVisible(true);
+        }
+    });
+    auto* loadMeasuresAction = fileMenu->addAction(QStringLiteral("Load measurements..."));
+    loadMeasuresAction->setObjectName(QStringLiteral("loadMeasuresAction"));
+    connect(loadMeasuresAction, &QAction::triggered, this, [this] {
+        const QString path = QFileDialog::getOpenFileName(
+            this, QStringLiteral("Load measurements"), QString(),
+            QStringLiteral("MedForge measurements (*.mfmeasure)"));
+        if (path.isEmpty()) {
+            return;
+        }
+        QString error;
+        if (!loadMeasures(path, &error)) {
+            errorBanner_->setMessage(Banner::Severity::Error, error);
+            errorBanner_->setVisible(true);
+        }
+    });
+    auto* exportReportAction = fileMenu->addAction(QStringLiteral("Export measurement &report..."));
+    exportReportAction->setObjectName(QStringLiteral("exportMeasureReportAction"));
+    connect(exportReportAction, &QAction::triggered, this, [this] {
+        const QString path = QFileDialog::getSaveFileName(
+            this, QStringLiteral("Export measurement report"), QString(),
+            QStringLiteral("Text report (*.txt)"));
+        if (path.isEmpty()) {
+            return;
+        }
+        QString error;
+        if (!exportMeasureReport(path, &error)) {
             errorBanner_->setMessage(Banner::Severity::Error, error);
             errorBanner_->setVisible(true);
         }
@@ -505,6 +589,83 @@ void WorkspaceWindow::buildDocks() {
     ctLayout->addWidget(labelMeshButton_);
     ctLayout->addWidget(segmentUnsaved_);
     ctLayout->addWidget(segmentProvenance_);
+    measureNotice_ = new QLabel(
+        QStringLiteral("Research measurements. Not validated. Limited by CT resolution, segmentation, and landmark placement."),
+        ctProperties_);
+    measureNotice_->setObjectName(QStringLiteral("measureNotice"));
+    measureNotice_->setWordWrap(true);
+    measureNotice_->setProperty("mfRole", QStringLiteral("secondary"));
+    measureTool_ = new SegmentedControl(
+        {QStringLiteral("Off"), QStringLiteral("Place"), QStringLiteral("Distance"),
+         QStringLiteral("Angle"), QStringLiteral("Area")},
+        ctProperties_);
+    measureTool_->setObjectName(QStringLiteral("measureTool"));
+    measureTool_->setToolTip(QStringLiteral("Measurement tool"));
+    measureSnap_ = new QCheckBox(QStringLiteral("Snap to surface"), ctProperties_);
+    measureSnap_->setObjectName(QStringLiteral("measureSnap"));
+    measureSnap_->setChecked(true);
+    measureSnapTolerance_ = new NumericEditor(ctProperties_);
+    measureSnapTolerance_->setObjectName(QStringLiteral("measureSnapTolerance"));
+    measureSnapTolerance_->setLabel(QStringLiteral("Snap"));
+    measureSnapTolerance_->setUnit(QStringLiteral("mm"));
+    measureSnapTolerance_->setDecimals(1);
+    measureSnapTolerance_->setRange(0, 50);
+    measureSnapTolerance_->setValue(2);
+    landmarkList_ = new QListWidget(ctProperties_);
+    landmarkList_->setObjectName(QStringLiteral("landmarkList"));
+    landmarkList_->setMaximumHeight(64);
+    measureTable_ = new QTableWidget(0, 4, ctProperties_);
+    measureTable_->setObjectName(QStringLiteral("measureTable"));
+    measureTable_->setHorizontalHeaderLabels(
+        {QStringLiteral("Name"), QStringLiteral("Kind"), QStringLiteral("Value"), QStringLiteral("Unit")});
+    measureTable_->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    measureTable_->setSelectionBehavior(QAbstractItemView::SelectRows);
+    measureTable_->setSelectionMode(QAbstractItemView::SingleSelection);
+    measureTable_->verticalHeader()->hide();
+    measureTable_->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    measureTable_->horizontalHeader()->setMinimumSectionSize(44);
+    measureTable_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    measureTable_->setMaximumHeight(72);
+    measureName_ = new QLineEdit(ctProperties_);
+    measureName_->setObjectName(QStringLiteral("measureName"));
+    measureName_->setPlaceholderText(QStringLiteral("Landmark"));
+    measureL_ = new NumericEditor(ctProperties_);
+    measureL_->setObjectName(QStringLiteral("measureL"));
+    measureL_->setLabel(QStringLiteral("L"));
+    measureL_->setUnit(QStringLiteral("mm"));
+    measureL_->setDecimals(2);
+    measureL_->setRange(-2000, 2000);
+    measureP_ = new NumericEditor(ctProperties_);
+    measureP_->setObjectName(QStringLiteral("measureP"));
+    measureP_->setLabel(QStringLiteral("P"));
+    measureP_->setUnit(QStringLiteral("mm"));
+    measureP_->setDecimals(2);
+    measureP_->setRange(-2000, 2000);
+    measureS_ = new NumericEditor(ctProperties_);
+    measureS_->setObjectName(QStringLiteral("measureS"));
+    measureS_->setLabel(QStringLiteral("S"));
+    measureS_->setUnit(QStringLiteral("mm"));
+    measureS_->setDecimals(2);
+    measureS_->setRange(-2000, 2000);
+    auto* deleteLandmarkButton = new QPushButton(QStringLiteral("Delete landmark"), ctProperties_);
+    deleteLandmarkButton->setObjectName(QStringLiteral("deleteLandmark"));
+    auto* undoMeasureButton = new QPushButton(QStringLiteral("Undo measure"), ctProperties_);
+    undoMeasureButton->setObjectName(QStringLiteral("undoMeasure"));
+    auto* redoMeasureButton = new QPushButton(QStringLiteral("Redo measure"), ctProperties_);
+    redoMeasureButton->setObjectName(QStringLiteral("redoMeasure"));
+    ctLayout->addWidget(measureNotice_);
+    ctLayout->addWidget(measureTool_);
+    ctLayout->addWidget(measureSnap_);
+    ctLayout->addWidget(measureSnapTolerance_);
+    ctLayout->addWidget(landmarkList_);
+    ctLayout->addWidget(measureTable_);
+    ctLayout->addWidget(measureName_);
+    ctLayout->addWidget(measureL_);
+    ctLayout->addWidget(measureP_);
+    ctLayout->addWidget(measureS_);
+    ctLayout->addWidget(deleteLandmarkButton);
+    ctLayout->addWidget(undoMeasureButton);
+    ctLayout->addWidget(redoMeasureButton);
     ctProperties_->hide();
     propertiesLayout->addWidget(propertiesBody_);
     propertiesLayout->addWidget(ctProperties_);
@@ -600,6 +761,36 @@ void WorkspaceWindow::buildDocks() {
         saveSegmentTools();
         refreshSegmentStatus();
     });
+    connect(measureTool_, &SegmentedControl::currentIndexChanged, this, [this](int) {
+        measurePending_.clear();
+    });
+    connect(deleteLandmarkButton, &QPushButton::clicked, this, &WorkspaceWindow::deleteSelectedLandmark);
+    connect(undoMeasureButton, &QPushButton::clicked, this, &WorkspaceWindow::undoMeasure);
+    connect(redoMeasureButton, &QPushButton::clicked, this, &WorkspaceWindow::redoMeasure);
+    connect(landmarkList_, &QListWidget::currentRowChanged, this, [this](int row) {
+        if (!updatingMeasure_ && row >= 0) {
+            selectLandmark(row);
+        }
+    });
+    connect(measureName_, &QLineEdit::editingFinished, this, [this] {
+        if (updatingMeasure_ || selectedLandmark_ < 0 ||
+            selectedLandmark_ >= static_cast<int>(measures_.landmarks.size())) {
+            return;
+        }
+        auto next = measures_;
+        next.landmarks[static_cast<std::size_t>(selectedLandmark_)].name =
+            measureName_->text().toStdString();
+        commitMeasures(std::move(next));
+    });
+    const auto moveFromEditors = [this](double) {
+        if (updatingMeasure_) {
+            return;
+        }
+        moveSelectedLandmark(measureL_->value(), measureP_->value(), measureS_->value());
+    };
+    connect(measureL_, &NumericEditor::valueChanged, this, moveFromEditors);
+    connect(measureP_, &NumericEditor::valueChanged, this, moveFromEditors);
+    connect(measureS_, &NumericEditor::valueChanged, this, moveFromEditors);
     auto* propertiesScroll = new QScrollArea(propertiesDock_);
     propertiesScroll->setObjectName(QStringLiteral("propertiesScroll"));
     propertiesScroll->setWidgetResizable(true);
@@ -802,6 +993,7 @@ void WorkspaceWindow::refreshSurfaceView() {
         meshStats_->setText(QStringLiteral("No surface"));
         surfaceRow_->hide();
         volumeViewport_->clearMesh();
+        refreshMeasures();
         return;
     }
     const medforge::geometry::TriangleMesh shown =
@@ -820,6 +1012,7 @@ void WorkspaceWindow::refreshSurfaceView() {
                             .arg(surfaceResult_.elapsedMs, 0, 'f', 0));
     surfaceRow_->setCountText(QString::number(stats.triangleCount));
     surfaceRow_->show();
+    refreshMeasures();
 }
 
 void WorkspaceWindow::applySurface(int generation, const medforge::rendering::SurfaceResult& result) {
@@ -957,6 +1150,7 @@ void WorkspaceWindow::clearLoadedSeries() {
     surfaceRow_->hide();
     volumeViewport_->clearStudy();
     showVolumePane(false);
+    resetMeasures();
     studiesRow_->setCountText(QStringLiteral("0"));
 }
 
@@ -1008,6 +1202,7 @@ void WorkspaceWindow::applyImportResult(const medforge::imaging::ImportResult& r
     meshStats_->setText(QStringLiteral("No surface"));
     surfaceRow_->hide();
     labelMap_ = medforge::imaging::emptyLabelMap(volume_);
+    resetMeasures();
     segmentHistory_ = {};
     segmentRevision_ = 0;
     segmentSavedRevision_ = 0;
@@ -1059,6 +1254,7 @@ void WorkspaceWindow::refreshMpr() {
     if (clipButton_->isChecked()) {
         refreshSurfaceView();
     }
+    updateMeasureOverlays();
 }
 
 namespace {
@@ -1148,6 +1344,11 @@ void WorkspaceWindow::handlePlanePointer(medforge::imaging::MprPlane plane, int 
         return;
     }
     medforge::imaging::moveCrosshairOnPlane(crosshair_, plane, x, y, volume_);
+    if (measureTool_ != nullptr && measureTool_->currentIndex() > 0) {
+        activateMeasureAtCrosshair();
+        refreshMpr();
+        return;
+    }
     paintSegment(plane, x, y);
     refreshMpr();
 }
@@ -1528,4 +1729,386 @@ bool WorkspaceWindow::segmentUnsaved() const {
 
 int WorkspaceWindow::labelAt(int i, int j, int k) const {
     return labelMap_.at(i, j, k);
+}
+
+void WorkspaceWindow::commitMeasures(medforge::geometry::MeasureDocument next) {
+    measureHistory_.execute(std::make_unique<MeasureEditCommand>(&measures_, measures_, std::move(next)));
+    refreshMeasures();
+}
+
+void WorkspaceWindow::resetMeasures() {
+    measures_ = {};
+    measureHistory_ = {};
+    selectedLandmark_ = -1;
+    measurePending_.clear();
+    if (measureTable_ != nullptr) {
+        refreshMeasures();
+    }
+}
+
+int WorkspaceWindow::nearestLandmark() const {
+    const medforge::core::CoordinateResult here = medforge::imaging::crosshairLps(crosshair_, volume_);
+    if (!here.ok()) {
+        return -1;
+    }
+    int best = -1;
+    double distance = 8;
+    for (int index = 0; index < static_cast<int>(measures_.landmarks.size()); ++index) {
+        const medforge::core::Vec3& point = measures_.landmarks[static_cast<std::size_t>(index)].positionMm;
+        const double dx = point.x - here.value.x;
+        const double dy = point.y - here.value.y;
+        const double dz = point.z - here.value.z;
+        const double gap = std::sqrt((dx * dx) + (dy * dy) + (dz * dz));
+        if (gap <= distance) {
+            distance = gap;
+            best = index;
+        }
+    }
+    return best;
+}
+
+void WorkspaceWindow::updateMeasureOverlays() {
+    if (axialViewport_ == nullptr) {
+        return;
+    }
+    if (!hasVolume_) {
+        axialViewport_->setAnnotations({}, {});
+        sagittalViewport_->setAnnotations({}, {});
+        coronalViewport_->setAnnotations({}, {});
+        volumeViewport_->setLandmarks({}, -1);
+        return;
+    }
+    struct Marker {
+        int index = 0;
+        QPoint pixel;
+    };
+    const auto fill = [&](medforge::imaging::MprPlane plane, int slice, MprViewport* view) {
+        QVector<PlaneAnnotation> markers;
+        QVector<Marker> located;
+        for (int index = 0; index < static_cast<int>(measures_.landmarks.size()); ++index) {
+            const medforge::core::CoordinateResult voxel = medforge::core::patientLpsToVoxelIndex(
+                measures_.landmarks[static_cast<std::size_t>(index)].positionMm, volume_.geometry.geometry);
+            if (!voxel.ok()) {
+                continue;
+            }
+            const double along = plane == medforge::imaging::MprPlane::Axial     ? voxel.value.z
+                                 : plane == medforge::imaging::MprPlane::Sagittal ? voxel.value.x
+                                                                                  : voxel.value.y;
+            if (std::abs(along - slice) > 0.51) {
+                continue;
+            }
+            const int x = static_cast<int>(std::lround(plane == medforge::imaging::MprPlane::Sagittal
+                                                           ? voxel.value.y
+                                                           : voxel.value.x));
+            const int y = static_cast<int>(std::lround(plane == medforge::imaging::MprPlane::Axial
+                                                           ? voxel.value.y
+                                                           : voxel.value.z));
+            const QPoint pixel(x, y);
+            markers.push_back(PlaneAnnotation{
+                pixel, QString::fromStdString(measures_.landmarks[static_cast<std::size_t>(index)].name),
+                index == selectedLandmark_});
+            located.push_back(Marker{index, pixel});
+        }
+        QVector<PlaneLink> links;
+        for (const auto& measure : measures_.measures) {
+            if (measure.kind != medforge::geometry::MeasureKind::Distance || measure.landmarks.size() < 2) {
+                continue;
+            }
+            const Marker* ends[2] = {};
+            for (const Marker& marker : located) {
+                const auto id = measures_.landmarks[static_cast<std::size_t>(marker.index)].id;
+                if (id == measure.landmarks[0]) {
+                    ends[0] = &marker;
+                }
+                if (id == measure.landmarks[1]) {
+                    ends[1] = &marker;
+                }
+            }
+            if (ends[0] != nullptr && ends[1] != nullptr) {
+                links.push_back(PlaneLink{ends[0]->pixel, ends[1]->pixel});
+            }
+        }
+        view->setAnnotations(markers, links);
+    };
+    fill(medforge::imaging::MprPlane::Axial, crosshair_.k, axialViewport_);
+    fill(medforge::imaging::MprPlane::Sagittal, crosshair_.i, sagittalViewport_);
+    fill(medforge::imaging::MprPlane::Coronal, crosshair_.j, coronalViewport_);
+    std::vector<medforge::core::Vec3> positions;
+    positions.reserve(measures_.landmarks.size());
+    for (const auto& landmark : measures_.landmarks) {
+        positions.push_back(landmark.positionMm);
+    }
+    volumeViewport_->setLandmarks(positions, selectedLandmark_);
+}
+
+void WorkspaceWindow::refreshMeasures() {
+    if (measureTable_ == nullptr) {
+        return;
+    }
+    updatingMeasure_ = true;
+    landmarkList_->clear();
+    for (const auto& landmark : measures_.landmarks) {
+        landmarkList_->addItem(QString::fromStdString(landmark.name));
+    }
+    if (selectedLandmark_ >= landmarkList_->count()) {
+        selectedLandmark_ = landmarkList_->count() - 1;
+    }
+    landmarkList_->setCurrentRow(selectedLandmark_);
+    const medforge::geometry::TriangleMesh* mesh = hasSurface_ ? &surfaceMesh_ : nullptr;
+    const auto values = medforge::geometry::evaluateMeasures(measures_, mesh);
+    measureTable_->setRowCount(static_cast<int>(measures_.measures.size()));
+    for (int row = 0; row < measureTable_->rowCount(); ++row) {
+        const auto& measure = measures_.measures[static_cast<std::size_t>(row)];
+        const auto& value = values[static_cast<std::size_t>(row)];
+        const QString kind = measure.kind == medforge::geometry::MeasureKind::Angle       ? QStringLiteral("Angle")
+                             : measure.kind == medforge::geometry::MeasureKind::SectionArea ? QStringLiteral("Area")
+                                                                                            : QStringLiteral("Distance");
+        const QString shown = value.ok ? QString::number(value.value, 'f', 3) : QString::fromStdString(value.message);
+        const QString texts[] = {QString::fromStdString(measure.name), kind, shown,
+                                 QString::fromStdString(value.unit)};
+        for (int column = 0; column < 4; ++column) {
+            measureTable_->setItem(row, column, new QTableWidgetItem(texts[column]));
+        }
+    }
+    const bool selected = selectedLandmark_ >= 0 &&
+                          selectedLandmark_ < static_cast<int>(measures_.landmarks.size());
+    measureName_->setEnabled(selected);
+    measureL_->setEnabled(selected);
+    measureP_->setEnabled(selected);
+    measureS_->setEnabled(selected);
+    if (selected) {
+        const auto& landmark = measures_.landmarks[static_cast<std::size_t>(selectedLandmark_)];
+        measureName_->setText(QString::fromStdString(landmark.name));
+        measureL_->setValue(landmark.positionMm.x);
+        measureP_->setValue(landmark.positionMm.y);
+        measureS_->setValue(landmark.positionMm.z);
+    }
+    updatingMeasure_ = false;
+    updateMeasureOverlays();
+}
+
+void WorkspaceWindow::activateMeasureAtCrosshair() {
+    if (!hasVolume_ || measureTool_ == nullptr || measureTool_->currentIndex() <= 0) {
+        return;
+    }
+    if (measureTool_->currentIndex() == 1) {
+        placeLandmarkAtVoxel(crosshair_.i, crosshair_.j, crosshair_.k);
+        return;
+    }
+    const int nearest = nearestLandmark();
+    if (nearest < 0) {
+        return;
+    }
+    if (measurePending_.empty() || measurePending_.back() != nearest) {
+        measurePending_.push_back(nearest);
+    }
+    const int need = measureTool_->currentIndex() == 2 ? 2 : 3;
+    if (static_cast<int>(measurePending_.size()) < need) {
+        selectLandmark(nearest);
+        return;
+    }
+    const int first = measurePending_[0];
+    const int second = measurePending_[1];
+    const int third = need == 3 ? measurePending_[2] : second;
+    measurePending_.clear();
+    auto next = measures_;
+    const auto kind = measureTool_->currentIndex() == 2   ? medforge::geometry::MeasureKind::Distance
+                      : measureTool_->currentIndex() == 3 ? medforge::geometry::MeasureKind::Angle
+                                                          : medforge::geometry::MeasureKind::SectionArea;
+    const std::string name = std::string(kind == medforge::geometry::MeasureKind::Distance   ? "D"
+                                         : kind == medforge::geometry::MeasureKind::Angle    ? "A"
+                                                                                             : "S") +
+                             std::to_string(next.measures.size() + 1);
+    std::vector<medforge::core::EntityId> ids = {next.landmarks[static_cast<std::size_t>(first)].id,
+                                                 next.landmarks[static_cast<std::size_t>(second)].id};
+    if (need == 3) {
+        ids.push_back(next.landmarks[static_cast<std::size_t>(third)].id);
+    }
+    next.addMeasure(name, kind, ids);
+    commitMeasures(std::move(next));
+}
+
+int WorkspaceWindow::placeLandmarkAtVoxel(int i, int j, int k) {
+    if (!hasVolume_ || i < 0 || j < 0 || k < 0 || i >= volume_.columns || j >= volume_.rows ||
+        k >= volume_.slices) {
+        return -1;
+    }
+    const medforge::core::CoordinateResult lps = medforge::core::voxelIndexToPatientLps(
+        medforge::core::Vec3{static_cast<double>(i), static_cast<double>(j), static_cast<double>(k)},
+        volume_.geometry.geometry);
+    if (!lps.ok()) {
+        return -1;
+    }
+    medforge::core::Vec3 position = lps.value;
+    bool snapped = false;
+    if (measureSnap_ != nullptr && measureSnap_->isChecked() && hasSurface_) {
+        const medforge::geometry::SnapResult snap = medforge::geometry::snapToSurface(
+            surfaceMesh_, position, measureSnapTolerance_->value());
+        position = snap.positionMm;
+        snapped = snap.snapped;
+    }
+    auto next = measures_;
+    const int index = static_cast<int>(next.landmarks.size());
+    next.addLandmark("L" + std::to_string(index + 1), position, snapped);
+    selectedLandmark_ = index;
+    commitMeasures(std::move(next));
+    return index;
+}
+
+int WorkspaceWindow::landmarkCount() const {
+    return static_cast<int>(measures_.landmarks.size());
+}
+
+void WorkspaceWindow::selectLandmark(int index) {
+    if (index < 0 || index >= static_cast<int>(measures_.landmarks.size())) {
+        selectedLandmark_ = -1;
+    } else {
+        selectedLandmark_ = index;
+    }
+    refreshMeasures();
+}
+
+void WorkspaceWindow::deleteSelectedLandmark() {
+    if (selectedLandmark_ < 0 || selectedLandmark_ >= static_cast<int>(measures_.landmarks.size())) {
+        return;
+    }
+    auto next = measures_;
+    next.removeLandmark(next.landmarks[static_cast<std::size_t>(selectedLandmark_)].id);
+    selectedLandmark_ = -1;
+    commitMeasures(std::move(next));
+}
+
+void WorkspaceWindow::moveSelectedLandmark(double lMm, double pMm, double sMm) {
+    if (selectedLandmark_ < 0 || selectedLandmark_ >= static_cast<int>(measures_.landmarks.size())) {
+        return;
+    }
+    auto next = measures_;
+    next.moveLandmark(next.landmarks[static_cast<std::size_t>(selectedLandmark_)].id,
+                      medforge::core::Vec3{lMm, pMm, sMm}, false);
+    commitMeasures(std::move(next));
+}
+
+int WorkspaceWindow::defineDistance(int first, int second) {
+    if (first < 0 || second < 0 || first >= landmarkCount() || second >= landmarkCount()) {
+        return -1;
+    }
+    auto next = measures_;
+    const int index = static_cast<int>(next.measures.size());
+    next.addMeasure("D" + std::to_string(index + 1), medforge::geometry::MeasureKind::Distance,
+                    {next.landmarks[static_cast<std::size_t>(first)].id,
+                     next.landmarks[static_cast<std::size_t>(second)].id});
+    commitMeasures(std::move(next));
+    return index;
+}
+
+double WorkspaceWindow::measureValue(int index) const {
+    const auto values =
+        medforge::geometry::evaluateMeasures(measures_, hasSurface_ ? &surfaceMesh_ : nullptr);
+    if (index < 0 || index >= static_cast<int>(values.size()) || !values[static_cast<std::size_t>(index)].ok) {
+        return 0;
+    }
+    return values[static_cast<std::size_t>(index)].value;
+}
+
+QString WorkspaceWindow::measureUnit(int index) const {
+    const auto values =
+        medforge::geometry::evaluateMeasures(measures_, hasSurface_ ? &surfaceMesh_ : nullptr);
+    if (index < 0 || index >= static_cast<int>(values.size())) {
+        return {};
+    }
+    return QString::fromStdString(values[static_cast<std::size_t>(index)].unit);
+}
+
+void WorkspaceWindow::undoMeasure() {
+    if (!measureHistory_.undo()) {
+        return;
+    }
+    if (selectedLandmark_ >= static_cast<int>(measures_.landmarks.size())) {
+        selectedLandmark_ = static_cast<int>(measures_.landmarks.size()) - 1;
+    }
+    refreshMeasures();
+}
+
+void WorkspaceWindow::redoMeasure() {
+    if (!measureHistory_.redo()) {
+        return;
+    }
+    refreshMeasures();
+}
+
+bool WorkspaceWindow::exportMeasureReport(const QString& path, QString* error) {
+    if (!hasVolume_) {
+        if (error != nullptr) {
+            *error = QStringLiteral("Import a CT series before exporting measurements");
+        }
+        return false;
+    }
+    const medforge::geometry::MeasureReportContext context{
+        volume_.seriesInstanceUid, volume_.geometry.geometry.spacingMm};
+    const medforge::geometry::TriangleMesh* mesh = hasSurface_ ? &surfaceMesh_ : nullptr;
+    QFile textFile(path);
+    if (!textFile.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+        if (error != nullptr) {
+            *error = QStringLiteral("Could not write the report");
+        }
+        return false;
+    }
+    textFile.write(medforge::geometry::measureReportText(measures_, mesh, context).c_str());
+    QFile csvFile(path + QStringLiteral(".csv"));
+    if (!csvFile.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+        if (error != nullptr) {
+            *error = QStringLiteral("Could not write the CSV report");
+        }
+        return false;
+    }
+    csvFile.write(medforge::geometry::measureReportCsv(measures_, mesh, context).c_str());
+    return true;
+}
+
+bool WorkspaceWindow::saveMeasures(const QString& path, QString* error) {
+    if (!hasVolume_) {
+        if (error != nullptr) {
+            *error = QStringLiteral("Import a CT series before saving measurements");
+        }
+        return false;
+    }
+    std::string message;
+    if (!medforge::geometry::saveMeasureDocument(measures_, volume_.seriesInstanceUid,
+                                                 path.toStdString(), &message)) {
+        if (error != nullptr) {
+            *error = QString::fromStdString(message);
+        }
+        return false;
+    }
+    return true;
+}
+
+bool WorkspaceWindow::loadMeasures(const QString& path, QString* error) {
+    if (!hasVolume_) {
+        if (error != nullptr) {
+            *error = QStringLiteral("Import a CT series before loading measurements");
+        }
+        return false;
+    }
+    medforge::geometry::MeasureDocument loaded;
+    std::string series;
+    std::string message;
+    if (!medforge::geometry::loadMeasureDocument(path.toStdString(), &loaded, &series, &message)) {
+        if (error != nullptr) {
+            *error = QString::fromStdString(message);
+        }
+        return false;
+    }
+    if (series != volume_.seriesInstanceUid) {
+        if (error != nullptr) {
+            *error = QStringLiteral("Measurements do not match this series");
+        }
+        return false;
+    }
+    measures_ = std::move(loaded);
+    measureHistory_ = {};
+    selectedLandmark_ = measures_.landmarks.empty() ? -1 : 0;
+    measurePending_.clear();
+    refreshMeasures();
+    return true;
 }

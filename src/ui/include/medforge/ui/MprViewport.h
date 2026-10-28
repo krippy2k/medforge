@@ -3,7 +3,19 @@
 #include <QImage>
 #include <QPoint>
 #include <QString>
+#include <QVector>
 #include <QWidget>
+
+struct PlaneAnnotation {
+    QPoint pixel;
+    QString label;
+    bool selected = false;
+};
+
+struct PlaneLink {
+    QPoint from;
+    QPoint to;
+};
 
 class MprViewport : public QWidget {
     Q_OBJECT
@@ -15,6 +27,7 @@ public:
     void setMillimetersPerPixel(double xMm, double yMm);
     void clearImage();
     void setCrosshair(const QPoint& pixel);
+    void setAnnotations(const QVector<PlaneAnnotation>& markers, const QVector<PlaneLink>& links);
     void setOrientation(const QString& left,
                         const QString& right,
                         const QString& top,
@@ -50,6 +63,8 @@ private:
     QString title_;
     QImage image_;
     QPoint crosshair_;
+    QVector<PlaneAnnotation> markers_;
+    QVector<PlaneLink> links_;
     double xMm_ = 1;
     double yMm_ = 1;
     QString left_ = QStringLiteral("R");

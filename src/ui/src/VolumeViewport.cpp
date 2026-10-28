@@ -37,6 +37,7 @@ VTK_AUTOINIT_DECLARE(vtkInteractionStyle)
 #include <vtkPolyData.h>
 #include <vtkPolyDataMapper.h>
 #include <vtkProperty.h>
+#include <vtkSphereSource.h>
 #include <vtkRenderWindow.h>
 #include <vtkRenderer.h>
 #include <vtkVolume.h>
@@ -65,6 +66,7 @@ struct VolumeViewport::Scene {
     vtkSmartPointer<vtkImageData> image;
     vtkSmartPointer<vtkVolume> volume;
     vtkSmartPointer<vtkActor> meshActor;
+    std::vector<vtkSmartPointer<vtkActor>> landmarkActors;
     vtkSmartPointer<vtkPlane> clip;
     vtkSmartPointer<vtkVolumeMapper> mapper;
 #endif
@@ -133,6 +135,9 @@ void VolumeViewport::chooseMapper() {
 }
 
 void VolumeViewport::clearStudy() {
+    landmarks_.clear();
+    selectedLandmark_ = -1;
+    rebuildLandmarks();
     hasVolume_ = false;
     columns_ = 0;
     rows_ = 0;
@@ -255,6 +260,45 @@ void VolumeViewport::clearMesh() {
     mesh_ = {};
     rebuildMeshActor();
     update();
+}
+
+void VolumeViewport::setLandmarks(const std::vector<medforge::core::Vec3>& positions, int selected) {
+    landmarks_ = positions;
+    selectedLandmark_ = selected;
+    rebuildLandmarks();
+    update();
+}
+
+void VolumeViewport::rebuildLandmarks() {
+#ifdef MEDFORGE_HAS_VTK
+    if (scene_->renderer == nullptr) {
+        return;
+    }
+    for (const auto& actor : scene_->landmarkActors) {
+        scene_->renderer->RemoveActor(actor);
+    }
+    scene_->landmarkActors.clear();
+    for (std::size_t index = 0; index < landmarks_.size(); ++index) {
+        vtkNew<vtkSphereSource> sphere;
+        sphere->SetRadius(1.5);
+        sphere->SetThetaResolution(16);
+        sphere->SetPhiResolution(16);
+        sphere->SetCenter(landmarks_[index].x, landmarks_[index].y, landmarks_[index].z);
+        vtkNew<vtkPolyDataMapper> mapper;
+        mapper->SetInputConnection(sphere->GetOutputPort());
+        auto actor = vtkSmartPointer<vtkActor>::New();
+        actor->SetMapper(mapper);
+        const bool selected = static_cast<int>(index) == selectedLandmark_;
+        actor->GetProperty()->SetColor(selected ? 0.29 : 0.96, selected ? 0.64 : 0.96, selected ? 0.78 : 0.97);
+        scene_->renderer->AddActor(actor);
+        scene_->landmarkActors.push_back(actor);
+    }
+    if (glWidget_ != nullptr) {
+        glWidget_->update();
+    }
+#else
+    Q_UNUSED(landmarks_);
+#endif
 }
 
 void VolumeViewport::setClipPlane(bool enabled,
@@ -536,6 +580,15 @@ void VolumeViewport::paintEvent(QPaintEvent* event) {
                                           project(mesh_.positions[v2], bounds)};
             painter.drawPolygon(projected, 3);
         }
+    }
+    for (std::size_t index = 0; index < landmarks_.size(); ++index) {
+        const QPointF center = project(landmarks_[index], bounds);
+        const bool selected = static_cast<int>(index) == selectedLandmark_;
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(QColor(8, 12, 16));
+        painter.drawEllipse(center, selected ? 7 : 5, selected ? 7 : 5);
+        painter.setBrush(selected ? medforge::ui::tokens::accent : QColor(244, 246, 248));
+        painter.drawEllipse(center, 3, 3);
     }
     painter.setPen(medforge::ui::tokens::textSecondary);
     painter.drawText(QRect(8, height() - 22, width() - 16, 18), Qt::AlignLeft | Qt::AlignVCenter,

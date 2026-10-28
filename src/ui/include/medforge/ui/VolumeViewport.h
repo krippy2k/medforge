@@ -8,6 +8,7 @@
 #include <QString>
 #include <QWidget>
 #include <memory>
+#include <vector>
 
 namespace medforge::imaging {
 struct CtVolume;
@@ -27,6 +28,7 @@ public:
     void setVolumeVisible(bool visible);
     void setMesh(const medforge::geometry::TriangleMesh& mesh);
     void clearMesh();
+    void setLandmarks(const std::vector<medforge::core::Vec3>& positions, int selected);
     void setClipPlane(bool enabled,
                       const medforge::core::Vec3& origin,
                       const medforge::core::Vec3& normal);
@@ -54,12 +56,15 @@ private:
     void pushTransfer();
     void pushClip();
     void rebuildMeshActor();
+    void rebuildLandmarks();
     QPointF project(const medforge::core::Vec3& point, const QRect& bounds) const;
 
     std::unique_ptr<Scene> scene_;
     medforge::rendering::CameraPose pose_ = medforge::rendering::homeCamera();
     medforge::rendering::TransferFunction transfer_ = medforge::rendering::softTissueTransfer();
     medforge::geometry::TriangleMesh mesh_;
+    std::vector<medforge::core::Vec3> landmarks_;
+    int selectedLandmark_ = -1;
     medforge::core::VoxelGridGeometry grid_{};
     medforge::core::Vec3 boundsMin_{};
     medforge::core::Vec3 boundsMax_{};

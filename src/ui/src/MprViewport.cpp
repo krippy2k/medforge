@@ -41,6 +41,12 @@ void MprViewport::setCrosshair(const QPoint& pixel) {
     update();
 }
 
+void MprViewport::setAnnotations(const QVector<PlaneAnnotation>& markers, const QVector<PlaneLink>& links) {
+    markers_ = markers;
+    links_ = links;
+    update();
+}
+
 void MprViewport::setOrientation(const QString& left,
                                  const QString& right,
                                  const QString& top,
@@ -151,6 +157,32 @@ void MprViewport::paintEvent(QPaintEvent* event) {
             painter.setPen(QPen(medforge::ui::tokens::accent, 1));
             painter.drawLine(QPointF(target.left(), py), QPointF(target.right(), py));
             painter.drawLine(QPointF(px, target.top()), QPointF(px, target.bottom()));
+        }
+        const auto toWidget = [&](const QPoint& pixel) {
+            return QPointF(target.left() + (pixel.x() + 0.5) * target.width() / image_.width(),
+                           target.top() + (pixel.y() + 0.5) * target.height() / image_.height());
+        };
+        painter.setPen(QPen(QColor(8, 12, 16), 3));
+        for (const PlaneLink& link : links_) {
+            painter.drawLine(toWidget(link.from), toWidget(link.to));
+        }
+        painter.setPen(QPen(medforge::ui::tokens::warning, 1));
+        for (const PlaneLink& link : links_) {
+            painter.drawLine(toWidget(link.from), toWidget(link.to));
+        }
+        for (const PlaneAnnotation& marker : markers_) {
+            const QPointF center = toWidget(marker.pixel);
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(QColor(8, 12, 16));
+            painter.drawEllipse(center, 6, 6);
+            painter.setBrush(marker.selected ? medforge::ui::tokens::accent : QColor(244, 246, 248));
+            painter.drawEllipse(center, 3, 3);
+            const QRect labelRect(static_cast<int>(center.x()) + 8, static_cast<int>(center.y()) - 8, 48, 16);
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(QColor(8, 12, 16, 210));
+            painter.drawRect(labelRect.adjusted(-2, -1, 2, 1));
+            painter.setPen(medforge::ui::tokens::textPrimary);
+            painter.drawText(labelRect, Qt::AlignLeft | Qt::AlignVCenter, marker.label);
         }
     }
     if (hasFocus()) {

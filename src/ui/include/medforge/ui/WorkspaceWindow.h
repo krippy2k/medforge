@@ -1,6 +1,7 @@
 #pragma once
 
 #include "medforge/core/CommandHistory.h"
+#include "medforge/geometry/Measure.h"
 #include "medforge/geometry/Surface.h"
 #include "medforge/imaging/CtImport.h"
 #include "medforge/imaging/LabelMap.h"
@@ -20,7 +21,10 @@ class SampleViewport;
 class SegmentedControl;
 class VolumeViewport;
 class QCheckBox;
+class QLineEdit;
+class QListWidget;
 class QPushButton;
+class QTableWidget;
 class TaskProgress;
 class WorkspaceActions;
 
@@ -64,6 +68,20 @@ public:
     bool loadMask(const QString& path, QString* error);
     void buildLabelMesh(int delayBeforeMs = 0);
     void focusLabeledVoxel();
+    void activateMeasureAtCrosshair();
+    int placeLandmarkAtVoxel(int i, int j, int k);
+    int landmarkCount() const;
+    void selectLandmark(int index);
+    void deleteSelectedLandmark();
+    void moveSelectedLandmark(double lMm, double pMm, double sMm);
+    int defineDistance(int first, int second);
+    double measureValue(int index) const;
+    QString measureUnit(int index) const;
+    void undoMeasure();
+    void redoMeasure();
+    bool exportMeasureReport(const QString& path, QString* error);
+    bool saveMeasures(const QString& path, QString* error);
+    bool loadMeasures(const QString& path, QString* error);
     bool segmentUnsaved() const;
     int labelAt(int i, int j, int k) const;
 
@@ -91,6 +109,11 @@ private:
     void resetSegment();
     void commitSegmentEdit(medforge::imaging::LabelEdit edit, const char* name);
     void refreshSegmentStatus();
+    void commitMeasures(medforge::geometry::MeasureDocument next);
+    void refreshMeasures();
+    void resetMeasures();
+    void updateMeasureOverlays();
+    int nearestLandmark() const;
     void saveSegmentTools();
     void loadSegmentTools();
     void shutdownSegment();
@@ -168,6 +191,21 @@ private:
     medforge::core::CancellationSource segmentCancel_;
     int segmentGeneration_ = 0;
     bool labelMeshRequest_ = false;
+    medforge::geometry::MeasureDocument measures_;
+    medforge::core::CommandHistory measureHistory_;
+    int selectedLandmark_ = -1;
+    std::vector<int> measurePending_;
+    bool updatingMeasure_ = false;
+    SegmentedControl* measureTool_ = nullptr;
+    QCheckBox* measureSnap_ = nullptr;
+    NumericEditor* measureSnapTolerance_ = nullptr;
+    NumericEditor* measureL_ = nullptr;
+    NumericEditor* measureP_ = nullptr;
+    NumericEditor* measureS_ = nullptr;
+    QLineEdit* measureName_ = nullptr;
+    QTableWidget* measureTable_ = nullptr;
+    QListWidget* landmarkList_ = nullptr;
+    QLabel* measureNotice_ = nullptr;
     medforge::imaging::MprCrosshair crosshair_;
     medforge::imaging::WindowLevel windowLevel_ = medforge::imaging::WindowLevel::softTissue();
     bool hasVolume_ = false;

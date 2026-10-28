@@ -396,6 +396,70 @@ bool saveVolumeStates(const QString& directory,
     return true;
 }
 
+void revealMeasureControls(WorkspaceWindow& window) {
+    auto* scroll = window.findChild<QScrollArea*>(QStringLiteral("propertiesScroll"));
+    auto* anchor = window.findChild<QWidget*>(QStringLiteral("measureNotice"));
+    if (scroll == nullptr || anchor == nullptr || scroll->widget() == nullptr) {
+        return;
+    }
+    const QPoint top = anchor->mapTo(scroll->widget(), QPoint(0, 0));
+    scroll->verticalScrollBar()->setValue(top.y());
+}
+
+bool saveMeasureStates(const QString& directory,
+                       int percent,
+                       QString* error,
+                       QTextStream& manifest) {
+    const std::filesystem::path phantom =
+        std::filesystem::temp_directory_path() / "medforge-m5-capture-phantom";
+    std::string phantomError;
+    if (!medforge::imaging::phantom::writeSyntheticAxialSeries(phantom, &phantomError)) {
+        if (error != nullptr) {
+            *error = QString::fromStdString(phantomError);
+        }
+        return false;
+    }
+    const QString layout = QDir::temp().filePath(QStringLiteral("medforge-m5-capture-layout.ini"));
+    const QString path = pathString(phantom);
+    const QList<QSize> sizes = {QSize(1280, 800), QSize(1920, 1080), QSize(2560, 1440)};
+    for (const QSize& size : sizes) {
+        WorkspaceWindow measured(layout);
+        measured.importFolder(path);
+        if (!waitForPhase(measured, WorkspaceActions::Phase::Study, 5000)) {
+            if (error != nullptr) {
+                *error = QStringLiteral("Measurement capture import did not finish.");
+            }
+            return false;
+        }
+        auto* tool = measured.findChild<SegmentedControl*>(QStringLiteral("measureTool"));
+        if (tool == nullptr || !tool->setCurrentIndex(1)) {
+            if (error != nullptr) {
+                *error = QStringLiteral("Measurement tool is missing.");
+            }
+            return false;
+        }
+        measured.placeLandmarkAtVoxel(4, 3, 2);
+        measured.placeLandmarkAtVoxel(1, 1, 2);
+        if (measured.defineDistance(0, 1) < 0) {
+            if (error != nullptr) {
+                *error = QStringLiteral("Distance was not created.");
+            }
+            return false;
+        }
+        measured.selectLandmark(0);
+        const QString name = QStringLiteral("measure-overlay-%1x%2-scale%3.png")
+                                 .arg(size.width())
+                                 .arg(size.height())
+                                 .arg(percent);
+        if (!saveWidget(measured, size, QDir(directory).filePath(name), error, manifest,
+                        [&measured] { revealMeasureControls(measured); })) {
+            return false;
+        }
+        measured.close();
+    }
+    return true;
+}
+
 void revealSegmentControls(WorkspaceWindow& window) {
     auto* scroll = window.findChild<QScrollArea*>(QStringLiteral("propertiesScroll"));
     auto* anchor = window.findChild<QWidget*>(QStringLiteral("segmentTool"));
@@ -608,7 +672,8 @@ bool captureUiEvidence(const QString& directory, QString* error) {
     foundation.close();
     return saveMprStates(directory, percent, error, manifest) &&
            saveVolumeStates(directory, percent, error, manifest) &&
-           saveSegmentStates(directory, percent, error, manifest);
+           saveSegmentStates(directory, percent, error, manifest) &&
+           saveMeasureStates(directory, percent, error, manifest);
 }
 
 } // namespace medforge::ui
