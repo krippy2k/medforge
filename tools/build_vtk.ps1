@@ -1,8 +1,19 @@
 param(
+    [ValidateSet("Debug", "Release")]
+    [string]$BuildType = "Release",
     [string]$SourceDir = "third_party/src/VTK-9.4.2",
-    [string]$BuildDir = "third_party/build/vtk-9.4.2-windows-msvc",
-    [string]$Prefix = "third_party/dist/vtk-9.4.2-windows-msvc"
+    [string]$BuildDir = "",
+    [string]$Prefix = ""
 )
+
+if (-not $BuildDir) {
+    $BuildDir = "third_party/build/vtk-9.4.2-windows-msvc"
+    if ($BuildType -eq "Debug") { $BuildDir += "-debug" }
+}
+if (-not $Prefix) {
+    $Prefix = "third_party/dist/vtk-9.4.2-windows-msvc"
+    if ($BuildType -eq "Debug") { $Prefix += "-debug" }
+}
 
 $ErrorActionPreference = "Stop"
 
@@ -41,7 +52,7 @@ cmd /c "`"$vcvars`" >nul && set" | ForEach-Object {
 }
 
 cmake -S $SourceDir -B $BuildDir -G Ninja `
-    -DCMAKE_BUILD_TYPE=Release `
+    "-DCMAKE_BUILD_TYPE=$BuildType" `
     "-DCMAKE_INSTALL_PREFIX=$InstallPrefix" `
     -DCMAKE_PREFIX_PATH="C:/Qt/6.12.0/msvc2022_64" `
     -DBUILD_SHARED_LIBS=ON `

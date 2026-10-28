@@ -57,12 +57,29 @@ SampleViewport::SampleViewport(QWidget* parent) : QWidget(parent) {
     syncLabel();
 }
 
+void SampleViewport::realizeNativeWindow() {
+#ifdef MEDFORGE_HAS_VTK
+    if (qEnvironmentVariable("QT_QPA_PLATFORM") == QLatin1String("offscreen")) {
+        return;
+    }
+    ensureScene();
+    if (renderWidget_ != nullptr) {
+        renderWidget_->winId();
+    }
+#endif
+}
+
 bool SampleViewport::showSample(QString* error) {
     if (!applyPose(medforge::rendering::homeCamera(), error)) {
         return false;
     }
     sampleVisible_ = true;
+    if (renderWidget_ != nullptr) {
+        label_->hide();
+        renderWidget_->show();
+    }
     syncLabel();
+    pushPoseToRenderer();
     return true;
 }
 
@@ -197,7 +214,7 @@ void SampleViewport::ensureScene() {
     vtkNew<vtkInteractorStyleTrackballCamera> style;
     widget->interactor()->SetInteractorStyle(style);
     static_cast<QVBoxLayout*>(layout())->addWidget(widget, 1);
-    label_->hide();
+    widget->hide();
     renderWidget_ = widget;
     QTimer::singleShot(0, widget, [this] { pushPoseToRenderer(); });
 #else

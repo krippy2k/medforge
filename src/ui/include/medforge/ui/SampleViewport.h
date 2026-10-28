@@ -17,6 +17,11 @@ class SampleViewport : public QWidget {
 public:
     explicit SampleViewport(QWidget* parent = nullptr);
 
+    // Create the native OpenGL child before the top-level window is shown.
+    // Windows cannot change a window's pixel format, so creating that child
+    // later makes Qt close the workspace and open a replacement.
+    void realizeNativeWindow();
+
     bool showSample(QString* error);
     bool saveSampleImage(const QString& filePath, QString* error);
     bool resetCamera(QString* error);

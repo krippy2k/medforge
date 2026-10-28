@@ -19,6 +19,7 @@ class WorkspaceWindowTest : public QObject {
 private slots:
     void restoresHiddenDockAndResetClearsIt();
     void showSampleEnablesResetCamera();
+    void showSampleKeepsTheSameNativeWindow();
     void viewportAcceptsFocus();
     void workerThreadCannotApplyAPose();
 };
@@ -56,6 +57,21 @@ void WorkspaceWindowTest::showSampleEnablesResetCamera() {
     QVERIFY(medforge::rendering::cameraPosesNear(
         window.sampleViewport()->pose(), medforge::rendering::homeCamera(), 1e-9));
     QCOMPARE(window.errorBanner()->isVisible(), false);
+}
+
+void WorkspaceWindowTest::showSampleKeepsTheSameNativeWindow() {
+    if (qEnvironmentVariable("QT_QPA_PLATFORM") == QLatin1String("offscreen")) {
+        QSKIP("Native window identity is not meaningful offscreen");
+    }
+    const QString path = QDir::temp().filePath(QStringLiteral("medforge-m1-native.ini"));
+    QFile::remove(path);
+    WorkspaceWindow window(path);
+    window.show();
+    QApplication::processEvents();
+    const WId before = window.winId();
+    window.showSample();
+    QApplication::processEvents();
+    QCOMPARE(window.winId(), before);
 }
 
 void WorkspaceWindowTest::viewportAcceptsFocus() {

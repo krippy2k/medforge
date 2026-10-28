@@ -78,6 +78,7 @@ WorkspaceWindow::WorkspaceWindow(const QString& layoutFile, QWidget* parent)
     });
     syncActions();
     updateProperties();
+    sampleViewport_->realizeNativeWindow();
 }
 
 QDockWidget* WorkspaceWindow::studiesDock() const {
