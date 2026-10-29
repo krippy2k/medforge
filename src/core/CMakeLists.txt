@@ -4,6 +4,7 @@ add_library(medforge_core STATIC
     src/Coordinates.cpp
     src/EntityId.cpp
     src/Module.cpp
+    src/Project.cpp
     src/SyntheticVolume.cpp
 )
 add_library(medforge::core ALIAS medforge_core)

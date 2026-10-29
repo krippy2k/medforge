@@ -4,20 +4,15 @@
 #include "medforge/imaging/SyntheticPhantom.h"
 #include "medforge/ui/ConfirmDialog.h"
 #include "medforge/ui/DesignTokens.h"
+#include "medforge/ui/FoundationWidgets.h"
 #include "medforge/ui/FoundationWindow.h"
 #include "medforge/ui/GalleryWindow.h"
-#include "medforge/ui/FoundationWidgets.h"
 #include "medforge/ui/NumericEditor.h"
 #include "medforge/ui/SegmentedControl.h"
 #include "medforge/ui/VolumeViewport.h"
 #include "medforge/ui/WorkspaceActions.h"
 #include "medforge/ui/WorkspaceReference.h"
 #include "medforge/ui/WorkspaceWindow.h"
-
-#include <QLabel>
-#include <QPushButton>
-#include <QScrollArea>
-#include <QScrollBar>
 
 #include <QApplication>
 #include <QDir>
@@ -26,8 +21,12 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QImage>
+#include <QLabel>
 #include <QPainter>
 #include <QPixmap>
+#include <QPushButton>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QTextStream>
 #include <QWidget>
 #include <algorithm>
@@ -163,10 +162,7 @@ QString pathString(const std::filesystem::path& path) {
 #endif
 }
 
-bool saveMprStates(const QString& directory,
-                   int percent,
-                   QString* error,
-                   QTextStream& manifest) {
+bool saveMprStates(const QString& directory, int percent, QString* error, QTextStream& manifest) {
     const QString suffix = QStringLiteral("-1280x800-scale%1.png").arg(percent);
     const QString layout = QDir::temp().filePath(QStringLiteral("medforge-m2-capture-layout.ini"));
     {
@@ -252,11 +248,10 @@ bool saveMprStates(const QString& directory,
             }
             return false;
         }
-        const QString name =
-            QStringLiteral("mpr-populated-%1x%2-scale%3.png")
-                .arg(size.width())
-                .arg(size.height())
-                .arg(percent);
+        const QString name = QStringLiteral("mpr-populated-%1x%2-scale%3.png")
+                                 .arg(size.width())
+                                 .arg(size.height())
+                                 .arg(percent);
         if (!saveWidget(populated, size, QDir(directory).filePath(name), error, manifest)) {
             return false;
         }
@@ -338,7 +333,8 @@ bool saveVolumeStates(const QString& directory,
         threshold->setValue(3000);
         emptySurface.buildSurface();
         if (!waitUntil(5000, [&emptySurface] {
-                return emptySurface.errorBanner()->message().contains(QStringLiteral("No surface")) ||
+                return emptySurface.errorBanner()->message().contains(
+                           QStringLiteral("No surface")) ||
                        emptySurface.errorBanner()->message().contains(QStringLiteral("VTK"));
             })) {
             if (error != nullptr) {
@@ -407,7 +403,8 @@ void revealMeshControls(WorkspaceWindow& window) {
 }
 
 bool prepareMeshCapture(WorkspaceWindow& window, QString* error) {
-    window.importFolder(pathString(std::filesystem::temp_directory_path() / "medforge-m6-capture-phantom"));
+    window.importFolder(
+        pathString(std::filesystem::temp_directory_path() / "medforge-m6-capture-phantom"));
     if (!waitForPhase(window, WorkspaceActions::Phase::Study, 5000)) {
         if (error != nullptr) {
             *error = QStringLiteral("Mesh capture import did not finish.");
@@ -456,8 +453,10 @@ bool saveMeshRepairStates(const QString& directory,
                                  .arg(size.width())
                                  .arg(size.height())
                                  .arg(percent);
-        if (!saveWidget(inspected, size, QDir(directory).filePath(name), error, manifest,
-                        [&inspected] { revealMeshControls(inspected); })) {
+        if (!saveWidget(
+                inspected, size, QDir(directory).filePath(name), error, manifest, [&inspected] {
+                    revealMeshControls(inspected);
+                })) {
             return false;
         }
         inspected.close();
@@ -473,9 +472,13 @@ bool saveMeshRepairStates(const QString& directory,
         }
         return false;
     }
-    if (!saveWidget(preview, QSize(1280, 800),
-                    QDir(directory).filePath(QStringLiteral("mesh-preview-1280x800-scale%1.png").arg(percent)),
-                    error, manifest, [&preview] { revealMeshControls(preview); })) {
+    if (!saveWidget(preview,
+                    QSize(1280, 800),
+                    QDir(directory).filePath(
+                        QStringLiteral("mesh-preview-1280x800-scale%1.png").arg(percent)),
+                    error,
+                    manifest,
+                    [&preview] { revealMeshControls(preview); })) {
         return false;
     }
     preview.close();
@@ -491,9 +494,13 @@ bool saveMeshRepairStates(const QString& directory,
         }
         return false;
     }
-    if (!saveWidget(exported, QSize(1280, 800),
-                    QDir(directory).filePath(QStringLiteral("mesh-export-1280x800-scale%1.png").arg(percent)),
-                    error, manifest, [&exported] { revealMeshControls(exported); })) {
+    if (!saveWidget(exported,
+                    QSize(1280, 800),
+                    QDir(directory).filePath(
+                        QStringLiteral("mesh-export-1280x800-scale%1.png").arg(percent)),
+                    error,
+                    manifest,
+                    [&exported] { revealMeshControls(exported); })) {
         return false;
     }
     exported.close();
@@ -555,8 +562,10 @@ bool saveMeasureStates(const QString& directory,
                                  .arg(size.width())
                                  .arg(size.height())
                                  .arg(percent);
-        if (!saveWidget(measured, size, QDir(directory).filePath(name), error, manifest,
-                        [&measured] { revealMeasureControls(measured); })) {
+        if (!saveWidget(
+                measured, size, QDir(directory).filePath(name), error, manifest, [&measured] {
+                    revealMeasureControls(measured);
+                })) {
             return false;
         }
         measured.close();
@@ -612,8 +621,10 @@ bool saveSegmentStates(const QString& directory,
                                  .arg(size.width())
                                  .arg(size.height())
                                  .arg(percent);
-        if (!saveWidget(segmented, size, QDir(directory).filePath(name), error, manifest,
-                        [&segmented] { revealSegmentControls(segmented); })) {
+        if (!saveWidget(
+                segmented, size, QDir(directory).filePath(name), error, manifest, [&segmented] {
+                    revealSegmentControls(segmented);
+                })) {
             return false;
         }
         segmented.close();
@@ -687,8 +698,9 @@ bool saveSegmentStates(const QString& directory,
                                  .arg(size.width())
                                  .arg(size.height())
                                  .arg(percent);
-        if (!saveWidget(meshed, size, QDir(directory).filePath(name), error, manifest,
-                        [&meshed] { revealSegmentControls(meshed); })) {
+        if (!saveWidget(meshed, size, QDir(directory).filePath(name), error, manifest, [&meshed] {
+                revealSegmentControls(meshed);
+            })) {
             return false;
         }
         meshed.close();
@@ -711,12 +723,64 @@ bool saveSegmentStates(const QString& directory,
         }
         return false;
     }
-    return saveWidget(missed,
-                      QSize(1280, 800),
-                      QDir(directory).filePath(QStringLiteral("segment-seed-1280x800-scale%1.png").arg(percent)),
-                      error,
-                      manifest,
-                      [&missed] { revealSegmentControls(missed); });
+    return saveWidget(
+        missed,
+        QSize(1280, 800),
+        QDir(directory).filePath(QStringLiteral("segment-seed-1280x800-scale%1.png").arg(percent)),
+        error,
+        manifest,
+        [&missed] { revealSegmentControls(missed); });
+}
+
+bool saveProjectStates(const QString& directory,
+                       int percent,
+                       QString* error,
+                       QTextStream& manifest) {
+    const std::filesystem::path phantom =
+        std::filesystem::temp_directory_path() / "medforge-m8-capture-phantom";
+    std::filesystem::remove_all(phantom);
+    std::filesystem::create_directories(phantom);
+    std::string phantomError;
+    if (!medforge::imaging::phantom::writeSyntheticAxialSeries(phantom, &phantomError)) {
+        if (error != nullptr) {
+            *error = QString::fromStdString(phantomError);
+        }
+        return false;
+    }
+    const QString layout = QDir::temp().filePath(QStringLiteral("medforge-m8-capture.ini"));
+    QFile::remove(layout);
+    WorkspaceWindow window(layout);
+    window.importFolder(pathString(phantom));
+    if (!waitForPhase(window, WorkspaceActions::Phase::Study, 20000)) {
+        if (error != nullptr) {
+            *error = QStringLiteral("Project capture import did not finish.");
+        }
+        return false;
+    }
+    window.applySegmentThreshold();
+    window.placeLandmarkAtVoxel(0, 0, 0);
+    window.placeLandmarkAtVoxel(4, 0, 0);
+    window.defineDistance(0, 1);
+    const QString project = QDir::temp().filePath(QStringLiteral("medforge-m8-capture.mfproject"));
+    QFile::remove(project);
+    QString saveError;
+    if (!window.saveProject(project, &saveError)) {
+        if (error != nullptr) {
+            *error = saveError;
+        }
+        return false;
+    }
+    const QList<QSize> sizes = {QSize(1280, 800), QSize(1920, 1080), QSize(2560, 1440)};
+    for (const QSize& size : sizes) {
+        const QString name = QStringLiteral("project-saved-%1x%2-scale%3.png")
+                                 .arg(size.width())
+                                 .arg(size.height())
+                                 .arg(percent);
+        if (!saveWidget(window, size, QDir(directory).filePath(name), error, manifest)) {
+            return false;
+        }
+    }
+    return true;
 }
 
 void revealImplantControls(WorkspaceWindow& window) {
@@ -729,7 +793,10 @@ void revealImplantControls(WorkspaceWindow& window) {
     scroll->verticalScrollBar()->setValue(top.y());
 }
 
-bool saveImplantStates(const QString& directory, int percent, QString* error, QTextStream& manifest) {
+bool saveImplantStates(const QString& directory,
+                       int percent,
+                       QString* error,
+                       QTextStream& manifest) {
     const std::filesystem::path phantom =
         std::filesystem::temp_directory_path() / "medforge-m7-capture-phantom";
     std::string phantomError;
@@ -752,16 +819,22 @@ bool saveImplantStates(const QString& directory, int percent, QString* error, QT
     window.placeCylinderImplant();
     const QList<QSize> sizes = {QSize(1280, 800), QSize(1920, 1080), QSize(2560, 1440)};
     for (const QSize& size : sizes) {
-        const QString path = QDir(directory).filePath(
-            QStringLiteral("implant-pose-%1x%2-scale%3.png").arg(size.width()).arg(size.height()).arg(percent));
-        if (!saveWidget(window, size, path, error, manifest, [&window] { revealImplantControls(window); })) {
+        const QString path =
+            QDir(directory).filePath(QStringLiteral("implant-pose-%1x%2-scale%3.png")
+                                         .arg(size.width())
+                                         .arg(size.height())
+                                         .arg(percent));
+        if (!saveWidget(window, size, path, error, manifest, [&window] {
+                revealImplantControls(window);
+            })) {
             return false;
         }
     }
     window.previewGuide();
     if (!saveWidget(window,
                     QSize(1280, 800),
-                    QDir(directory).filePath(QStringLiteral("implant-guide-1280x800-scale%1.png").arg(percent)),
+                    QDir(directory).filePath(
+                        QStringLiteral("implant-guide-1280x800-scale%1.png").arg(percent)),
                     error,
                     manifest,
                     [&window] { revealImplantControls(window); })) {
@@ -773,7 +846,8 @@ bool saveImplantStates(const QString& directory, int percent, QString* error, QT
     }
     return saveWidget(window,
                       QSize(1280, 800),
-                      QDir(directory).filePath(QStringLiteral("implant-overlap-1280x800-scale%1.png").arg(percent)),
+                      QDir(directory).filePath(
+                          QStringLiteral("implant-overlap-1280x800-scale%1.png").arg(percent)),
                       error,
                       manifest,
                       [&window] { revealImplantControls(window); });
@@ -839,7 +913,8 @@ bool captureUiEvidence(const QString& directory, QString* error) {
            saveSegmentStates(directory, percent, error, manifest) &&
            saveMeasureStates(directory, percent, error, manifest) &&
            saveMeshRepairStates(directory, percent, error, manifest) &&
-           saveImplantStates(directory, percent, error, manifest);
+           saveImplantStates(directory, percent, error, manifest) &&
+           saveProjectStates(directory, percent, error, manifest);
 }
 
 } // namespace medforge::ui

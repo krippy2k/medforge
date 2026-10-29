@@ -2,7 +2,7 @@
 
 A greenfield C++20/Qt 6 desktop application for CT visualization, segmentation, mesh processing, anatomical measurements, and experimental CAD planning. **Research and demonstration only; not for clinical use.**
 
-M0 establishes the build, module boundaries, design tokens, and developer component gallery. M2 reads uncompressed CT into linked MPR views. M3 adds volume ray casting and an isosurface. M4 adds labeled voxel masks. M5 places landmarks and reports distances, angles, and cross-section areas. M6 inspects a mesh, previews smoothing, decimation, and small-hole fill, and exports binary STL in millimeters. M7 imports a STEP or IGES implant, positions it against synthetic anatomy, and exports a research guide as STEP when the solid is a valid B-Rep.
+M0 establishes the build, module boundaries, design tokens, and developer component gallery. M2 reads uncompressed CT into linked MPR views. M3 adds volume ray casting and an isosurface. M4 adds labeled voxel masks. M5 places landmarks and reports distances, angles, and cross-section areas. M6 inspects a mesh, previews smoothing, decimation, and small-hole fill, and exports binary STL in millimeters. M7 imports a STEP or IGES implant, positions it against synthetic anatomy, and exports a research guide as STEP when the solid is a valid B-Rep. M8 saves a versioned project beside the CT folder and checks it on reopen.
 
 ## Milestone sequence
 M0 Foundation → M1 Desktop shell → M2 DICOM/MPR → M3 Volume/mesh → M4 Segmentation → M5 Measurements → M6 Mesh repair/export → M7 Guide/implant planning → M8 Validation/release.
@@ -14,7 +14,7 @@ Dependency direction is one-way:
 
 `core` ← `imaging`, `geometry` ← `cad`, `core` ← `rendering`, `core` ← `ui` ← `apps/desktop`
 
-- `core` has no Qt dependency. It owns LPS millimeter conversion, entity ids, cancellation tokens, command history, and the synthetic volume fixture.
+- `core` has no Qt dependency. It owns LPS millimeter conversion, entity ids, cancellation tokens, command history, versioned project files, and the synthetic volume fixture.
 - `imaging` reads uncompressed CT and owns labeled voxel masks. `geometry` stores landmarks and mesh repair without Qt or VTK: distances, angles, section areas, topology, smoothing, decimation, small-hole fill, and binary STL. `rendering` uses VTK 9.4.2 for volume ray casting and Flying Edges when that package is present. `cad` links Open CASCADE 7.9.3 when that kit is installed and does not expose its types.
 - `ui` owns tokens, the generated stylesheet, shared widgets, the component gallery, and the M1 layout reference.
 - Patient coordinates are LPS millimeters. Voxel conversion is `origin + direction × (index ∘ spacing)`. Spacing must be positive and the direction matrix must be invertible.
@@ -60,10 +60,10 @@ The desktop executable is `build/<preset>/bin/medforge` (`.exe` on Windows). Vis
 ```text
 medforge --gallery
 medforge --reference
-medforge --capture docs/ui/evidence/M7
+medforge --capture docs/ui/evidence/M8
 ```
 
-Screenshot steps are in `docs/ui/screenshot-workflow.md`. The current demo script is `docs/M7-demo.md`.
+Screenshot steps are in `docs/ui/screenshot-workflow.md`. The current demo script is `docs/M8-demo.md`. The module diagram is `docs/architecture.md`. An unsigned Windows folder is produced by `tools/package_unsigned.ps1`.
 
 Generate the checked-in synthetic sphere fixture with:
 
@@ -79,6 +79,7 @@ Tokens live in code and are written into the Qt stylesheet. The approved M1 wire
 ## Limitations
 - M6 reports bounds, area, volume when the mesh is watertight, component count, and open or non-manifold edges. Smoothing, decimation, and small-hole fill are previews until Apply repair. A hole above the edge limit is refused. Binary STL is millimeters and is checked by reading it back. OBJ and PLY are not written. Morphology is not included.
 - M7 places a CAD implant on the axis-aligned bounds of the loaded voxel centers and builds a prototype guide as an extruded contact patch minus a cylinder. Clearance is a B-rep minimum distance plus common-solid volume, with the tolerance shown in the dock. A valid B-rep exports as STEP with a not-for-manufacture watermark. A triangle mesh exports as STL and is not described as an exact STEP. The guide is not a general bone-surface offset and is not for manufacture.
+- M8 writes `MFPROJECT 1` by replacing the previous file only after the new text is complete. The mask and measurements sit beside it. Reopen imports the referenced CT folder and refuses a checksum mismatch or a missing folder. The fingerprint is little-endian and is not a cross-architecture voxel archive. AddressSanitizer is a CMake option and is off for the VTK and Open CASCADE kits. The Windows package is unsigned.
 - Offscreen capture draws a software preview of the volume bounds and the mesh. GPU ray-cast pixels are not part of that capture.
 - Compressed DICOM transfer syntaxes and enhanced multi-frame CT are recognized and rejected.
 - The gallery sample task is a cancellable progress demonstration, not an imaging operation.

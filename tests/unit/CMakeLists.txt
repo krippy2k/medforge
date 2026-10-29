@@ -18,6 +18,14 @@ medforge_add_test(core_synthetic_volume_test
     SOURCES core/SyntheticVolumeTest.cpp
     LIBS medforge::core
 )
+medforge_add_test(core_project_test
+    SOURCES core/ProjectTest.cpp
+    LIBS medforge::core
+)
+medforge_add_test(core_benchmark_test
+    SOURCES core/BenchmarkTest.cpp
+    LIBS medforge::imaging medforge::geometry medforge::rendering
+)
 target_compile_definitions(core_synthetic_volume_test PRIVATE MEDFORGE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
 medforge_add_test(imaging_ct_series_test
@@ -114,6 +122,10 @@ medforge_add_test(ui_mesh_workspace_test
 )
 medforge_add_test(ui_implant_workspace_test
     SOURCES ui/ImplantWorkspaceTest.cpp
+    LIBS medforge::ui
+)
+medforge_add_test(ui_project_workspace_test
+    SOURCES ui/ProjectWorkspaceTest.cpp
     LIBS medforge::ui
 )
 medforge_add_test(ui_workspace_window_test

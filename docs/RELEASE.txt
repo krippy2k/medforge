@@ -1,0 +1,9 @@
+# MedForge 0.1.0 unsigned Windows build
+
+This folder is an unsigned research build. It is not signed, notarized, or a medical device.
+
+Research/demo only — not for clinical use. Do not use it for diagnosis, treatment, or manufacture.
+
+The CT sample is the synthetic axial series written by MedForge tests and by `medforge-fixtures`. It is not patient data. A saved project (`*.mfproject`) stores the series location, display settings, mask, and measurements. The image bytes stay in the CT folder. Reopen refuses the project when that series checksum changes or the folder is missing.
+
+Open CASCADE and VTK are present only when this build was made from the local debug kits. Release and CI builds keep the CAD stub and skip isosurface extraction.

@@ -2,6 +2,7 @@
 
 #include "medforge/cad/Kernel.h"
 #include "medforge/core/CommandHistory.h"
+#include "medforge/core/Project.h"
 #include "medforge/geometry/Measure.h"
 #include "medforge/geometry/MeshProcess.h"
 #include "medforge/geometry/Surface.h"
@@ -102,6 +103,8 @@ public:
     double guideVolume() const;
     QString guideStatus() const;
     bool exportPrototype(const QString& path, QString* error);
+    bool saveProject(const QString& path, QString* error);
+    bool openProject(const QString& path, QString* error);
     bool meshPreviewActive() const;
     int committedTriangleCount() const;
     QString meshDiagnostics() const;
@@ -123,6 +126,7 @@ private:
     void updateProperties();
     void refreshMpr();
     void applyImportResult(const medforge::imaging::ImportResult& result);
+    void restoreOpenedProject();
     void clearLoadedSeries();
     void shutdownImport();
     void shutdownSurface();
@@ -273,6 +277,10 @@ private:
     medforge::imaging::MprCrosshair crosshair_;
     medforge::imaging::WindowLevel windowLevel_ = medforge::imaging::WindowLevel::softTissue();
     bool hasVolume_ = false;
+    std::filesystem::path seriesFolder_;
+    bool restoreProject_ = false;
+    medforge::core::ProjectDocument pendingProject_;
+    std::filesystem::path pendingProjectFile_;
     bool updatingWindowLevel_ = false;
     bool closing_ = false;
 };

@@ -14,34 +14,32 @@
 #include "medforge/ui/VolumeViewport.h"
 #include "medforge/ui/WorkspaceActions.h"
 
-#include <chrono>
-#include <cmath>
-
+#include <QAbstractItemView>
 #include <QAction>
 #include <QCheckBox>
 #include <QCloseEvent>
-#include <QHBoxLayout>
 #include <QDockWidget>
+#include <QFile>
 #include <QFileDialog>
 #include <QFrame>
 #include <QGridLayout>
+#include <QHBoxLayout>
+#include <QHeaderView>
 #include <QImage>
 #include <QKeySequence>
-#include <QAbstractItemView>
-#include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMenuBar>
-#include <QTableWidget>
 #include <QMessageBox>
 #include <QPushButton>
-#include <QFile>
 #include <QScrollArea>
 #include <QStatusBar>
+#include <QTableWidget>
 #include <QTextStream>
 #include <QToolBar>
 #include <QVBoxLayout>
+#include <chrono>
 #include <cmath>
 #include <filesystem>
 
@@ -128,6 +126,14 @@ std::filesystem::path folderPath(const QString& folder) {
     return std::filesystem::path(folder.toStdWString());
 #else
     return std::filesystem::path(folder.toStdString());
+#endif
+}
+
+QString pathToQString(const std::filesystem::path& path) {
+#ifdef Q_OS_WIN
+    return QString::fromStdWString(path.wstring());
+#else
+    return QString::fromStdString(path.string());
 #endif
 }
 
@@ -281,17 +287,60 @@ void WorkspaceWindow::buildMenus() {
     importAction_->setShortcut(QKeySequence::Open);
     connect(importAction_, &QAction::triggered, this, [this] {
         const QString folder = QFileDialog::getExistingDirectory(
-            this, QStringLiteral("Import CT folder"), QString(),
+            this,
+            QStringLiteral("Import CT folder"),
+            QString(),
             QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
         if (!folder.isEmpty()) {
             importFolder(folder);
         }
     });
+    auto* openProjectAction = fileMenu->addAction(QStringLiteral("Open &project..."));
+    openProjectAction->setObjectName(QStringLiteral("openProjectAction"));
+    openProjectAction->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_O));
+    openProjectAction->setToolTip(QStringLiteral("Open a MedForge project"));
+    connect(openProjectAction, &QAction::triggered, this, [this] {
+        const QString path =
+            QFileDialog::getOpenFileName(this,
+                                         QStringLiteral("Open project"),
+                                         QString(),
+                                         QStringLiteral("MedForge project (*.mfproject)"));
+        if (path.isEmpty()) {
+            return;
+        }
+        QString error;
+        if (!openProject(path, &error)) {
+            errorBanner_->setMessage(Banner::Severity::Error, error);
+            errorBanner_->setVisible(true);
+        }
+    });
+    auto* saveProjectAction = fileMenu->addAction(QStringLiteral("Save project..."));
+    saveProjectAction->setObjectName(QStringLiteral("saveProjectAction"));
+    saveProjectAction->setShortcut(QKeySequence::Save);
+    saveProjectAction->setToolTip(QStringLiteral("Save the study, mask, and measurements"));
+    connect(saveProjectAction, &QAction::triggered, this, [this] {
+        const QString path =
+            QFileDialog::getSaveFileName(this,
+                                         QStringLiteral("Save project"),
+                                         QString(),
+                                         QStringLiteral("MedForge project (*.mfproject)"));
+        if (path.isEmpty()) {
+            return;
+        }
+        QString error;
+        if (!saveProject(path, &error)) {
+            errorBanner_->setMessage(Banner::Severity::Error, error);
+            errorBanner_->setVisible(true);
+        }
+    });
     auto* saveMaskAction = fileMenu->addAction(QStringLiteral("Save &mask..."));
     saveMaskAction->setObjectName(QStringLiteral("saveMaskAction"));
     connect(saveMaskAction, &QAction::triggered, this, [this] {
-        const QString path = QFileDialog::getSaveFileName(
-            this, QStringLiteral("Save label mask"), QString(), QStringLiteral("MedForge mask (*.mfmask)"));
+        const QString path =
+            QFileDialog::getSaveFileName(this,
+                                         QStringLiteral("Save label mask"),
+                                         QString(),
+                                         QStringLiteral("MedForge mask (*.mfmask)"));
         if (path.isEmpty()) {
             return;
         }
@@ -304,8 +353,11 @@ void WorkspaceWindow::buildMenus() {
     auto* loadMaskAction = fileMenu->addAction(QStringLiteral("&Load mask..."));
     loadMaskAction->setObjectName(QStringLiteral("loadMaskAction"));
     connect(loadMaskAction, &QAction::triggered, this, [this] {
-        const QString path = QFileDialog::getOpenFileName(
-            this, QStringLiteral("Load label mask"), QString(), QStringLiteral("MedForge mask (*.mfmask)"));
+        const QString path =
+            QFileDialog::getOpenFileName(this,
+                                         QStringLiteral("Load label mask"),
+                                         QString(),
+                                         QStringLiteral("MedForge mask (*.mfmask)"));
         if (path.isEmpty()) {
             return;
         }
@@ -318,9 +370,11 @@ void WorkspaceWindow::buildMenus() {
     auto* saveMeasuresAction = fileMenu->addAction(QStringLiteral("Save &measurements..."));
     saveMeasuresAction->setObjectName(QStringLiteral("saveMeasuresAction"));
     connect(saveMeasuresAction, &QAction::triggered, this, [this] {
-        const QString path = QFileDialog::getSaveFileName(
-            this, QStringLiteral("Save measurements"), QString(),
-            QStringLiteral("MedForge measurements (*.mfmeasure)"));
+        const QString path =
+            QFileDialog::getSaveFileName(this,
+                                         QStringLiteral("Save measurements"),
+                                         QString(),
+                                         QStringLiteral("MedForge measurements (*.mfmeasure)"));
         if (path.isEmpty()) {
             return;
         }
@@ -333,9 +387,11 @@ void WorkspaceWindow::buildMenus() {
     auto* loadMeasuresAction = fileMenu->addAction(QStringLiteral("Load measurements..."));
     loadMeasuresAction->setObjectName(QStringLiteral("loadMeasuresAction"));
     connect(loadMeasuresAction, &QAction::triggered, this, [this] {
-        const QString path = QFileDialog::getOpenFileName(
-            this, QStringLiteral("Load measurements"), QString(),
-            QStringLiteral("MedForge measurements (*.mfmeasure)"));
+        const QString path =
+            QFileDialog::getOpenFileName(this,
+                                         QStringLiteral("Load measurements"),
+                                         QString(),
+                                         QStringLiteral("MedForge measurements (*.mfmeasure)"));
         if (path.isEmpty()) {
             return;
         }
@@ -348,9 +404,11 @@ void WorkspaceWindow::buildMenus() {
     auto* exportReportAction = fileMenu->addAction(QStringLiteral("Export measurement &report..."));
     exportReportAction->setObjectName(QStringLiteral("exportMeasureReportAction"));
     connect(exportReportAction, &QAction::triggered, this, [this] {
-        const QString path = QFileDialog::getSaveFileName(
-            this, QStringLiteral("Export measurement report"), QString(),
-            QStringLiteral("Text report (*.txt)"));
+        const QString path =
+            QFileDialog::getSaveFileName(this,
+                                         QStringLiteral("Export measurement report"),
+                                         QString(),
+                                         QStringLiteral("Text report (*.txt)"));
         if (path.isEmpty()) {
             return;
         }
@@ -363,8 +421,10 @@ void WorkspaceWindow::buildMenus() {
     auto* exportStlAction = fileMenu->addAction(QStringLiteral("Export &STL..."));
     exportStlAction->setObjectName(QStringLiteral("exportStlAction"));
     connect(exportStlAction, &QAction::triggered, this, [this] {
-        const QString path = QFileDialog::getSaveFileName(
-            this, QStringLiteral("Export binary STL"), QString(), QStringLiteral("Binary STL (*.stl)"));
+        const QString path = QFileDialog::getSaveFileName(this,
+                                                          QStringLiteral("Export binary STL"),
+                                                          QString(),
+                                                          QStringLiteral("Binary STL (*.stl)"));
         if (path.isEmpty()) {
             return;
         }
@@ -378,7 +438,9 @@ void WorkspaceWindow::buildMenus() {
     importImplantAction->setObjectName(QStringLiteral("importImplantAction"));
     connect(importImplantAction, &QAction::triggered, this, [this] {
         const QString path = QFileDialog::getOpenFileName(
-            this, QStringLiteral("Import implant"), QString(),
+            this,
+            QStringLiteral("Import implant"),
+            QString(),
             QStringLiteral("STEP or IGES (*.step *.stp *.iges *.igs)"));
         if (path.isEmpty()) {
             return;
@@ -392,9 +454,11 @@ void WorkspaceWindow::buildMenus() {
     auto* exportPrototypeAction = fileMenu->addAction(QStringLiteral("Export &prototype..."));
     exportPrototypeAction->setObjectName(QStringLiteral("exportPrototypeAction"));
     connect(exportPrototypeAction, &QAction::triggered, this, [this] {
-        const QString path = QFileDialog::getSaveFileName(
-            this, QStringLiteral("Export prototype"), QString(),
-            QStringLiteral("STEP or STL (*.step *.stp *.stl)"));
+        const QString path =
+            QFileDialog::getSaveFileName(this,
+                                         QStringLiteral("Export prototype"),
+                                         QString(),
+                                         QStringLiteral("STEP or STL (*.step *.stp *.stl)"));
         if (path.isEmpty()) {
             return;
         }
@@ -516,12 +580,11 @@ void WorkspaceWindow::buildDocks() {
     auto* ctLayout = new QVBoxLayout(ctProperties_);
     ctLayout->setContentsMargins(0, 0, 0, 0);
     ctLayout->setSpacing(medforge::ui::tokens::space8);
-    windowPresets_ = new SegmentedControl(
-        {QStringLiteral("Soft"),
-         QStringLiteral("Lung"),
-         QStringLiteral("Bone"),
-         QStringLiteral("Brain")},
-        ctProperties_);
+    windowPresets_ = new SegmentedControl({QStringLiteral("Soft"),
+                                           QStringLiteral("Lung"),
+                                           QStringLiteral("Bone"),
+                                           QStringLiteral("Brain")},
+                                          ctProperties_);
     windowPresets_->setObjectName(QStringLiteral("windowLevelPresets"));
     windowPresets_->setToolTip(QStringLiteral("Display window presets. Not a clinical window."));
     windowWidth_ = new NumericEditor(ctProperties_);
@@ -536,8 +599,8 @@ void WorkspaceWindow::buildDocks() {
     windowCenter_->setUnit(QStringLiteral("HU"));
     windowCenter_->setDecimals(0);
     windowCenter_->setRange(-2000, 4000);
-    auto* displayNote = new QLabel(
-        QStringLiteral("Display presets only. Not a clinical window."), ctProperties_);
+    auto* displayNote =
+        new QLabel(QStringLiteral("Display presets only. Not a clinical window."), ctProperties_);
     displayNote->setWordWrap(true);
     displayNote->setProperty("mfRole", QStringLiteral("secondary"));
     ctLayout->addWidget(windowPresets_);
@@ -547,7 +610,8 @@ void WorkspaceWindow::buildDocks() {
     volumePresets_ = new SegmentedControl(
         {QStringLiteral("Soft"), QStringLiteral("Lung"), QStringLiteral("Bone")}, ctProperties_);
     volumePresets_->setObjectName(QStringLiteral("volumePresets"));
-    volumePresets_->setToolTip(QStringLiteral("Volume opacity presets. Not a clinical transfer function."));
+    volumePresets_->setToolTip(
+        QStringLiteral("Volume opacity presets. Not a clinical transfer function."));
     auto* visibility = new QWidget(ctProperties_);
     auto* visibilityLayout = new QHBoxLayout(visibility);
     visibilityLayout->setContentsMargins(0, 0, 0, 0);
@@ -578,10 +642,13 @@ void WorkspaceWindow::buildDocks() {
     buildSurfaceButton_ = new QPushButton(QStringLiteral("Build surface"), ctProperties_);
     buildSurfaceButton_->setObjectName(QStringLiteral("buildSurface"));
     buildSurfaceButton_->setProperty("mfRole", QStringLiteral("primary"));
-    cameraViews_ = new SegmentedControl(
-        {QStringLiteral("A"), QStringLiteral("P"), QStringLiteral("L"), QStringLiteral("R"),
-         QStringLiteral("S"), QStringLiteral("I")},
-        ctProperties_);
+    cameraViews_ = new SegmentedControl({QStringLiteral("A"),
+                                         QStringLiteral("P"),
+                                         QStringLiteral("L"),
+                                         QStringLiteral("R"),
+                                         QStringLiteral("S"),
+                                         QStringLiteral("I")},
+                                        ctProperties_);
     cameraViews_->setObjectName(QStringLiteral("cameraViews"));
     cameraViews_->setToolTip(QStringLiteral("Anatomical camera presets"));
     meshStats_ = new QLabel(QStringLiteral("No surface"), ctProperties_);
@@ -627,8 +694,8 @@ void WorkspaceWindow::buildDocks() {
     undoMeshButton->setObjectName(QStringLiteral("undoMesh"));
     auto* redoMeshButton = new QPushButton(QStringLiteral("Redo mesh"), ctProperties_);
     redoMeshButton->setObjectName(QStringLiteral("redoMesh"));
-    implantNotice_ = new QLabel(QStringLiteral("Research prototype. Not for manufacture."),
-                                 ctProperties_);
+    implantNotice_ =
+        new QLabel(QStringLiteral("Research prototype. Not for manufacture."), ctProperties_);
     implantNotice_->setObjectName(QStringLiteral("implantNotice"));
     implantNotice_->setWordWrap(true);
     implantNotice_->setProperty("mfRole", QStringLiteral("secondary"));
@@ -639,8 +706,13 @@ void WorkspaceWindow::buildDocks() {
     guideStatus_->setObjectName(QStringLiteral("guideStatus"));
     guideStatus_->setWordWrap(true);
     guideStatus_->setProperty("mfRole", QStringLiteral("secondary"));
-    auto makePoseEditor = [this](NumericEditor*& editor, const char* name, const QString& label,
-                                 const QString& unit, double minimum, double maximum, int decimals) {
+    auto makePoseEditor = [this](NumericEditor*& editor,
+                                 const char* name,
+                                 const QString& label,
+                                 const QString& unit,
+                                 double minimum,
+                                 double maximum,
+                                 int decimals) {
         editor = new NumericEditor(ctProperties_);
         editor->setObjectName(QString::fromUtf8(name));
         editor->setLabel(label);
@@ -652,9 +724,12 @@ void WorkspaceWindow::buildDocks() {
     makePoseEditor(implantL_, "implantL", QStringLiteral("L"), QStringLiteral("mm"), -500, 500, 2);
     makePoseEditor(implantP_, "implantP", QStringLiteral("P"), QStringLiteral("mm"), -500, 500, 2);
     makePoseEditor(implantS_, "implantS", QStringLiteral("S"), QStringLiteral("mm"), -500, 500, 2);
-    makePoseEditor(implantRx_, "implantRx", QStringLiteral("Rot L"), QStringLiteral("deg"), -180, 180, 1);
-    makePoseEditor(implantRy_, "implantRy", QStringLiteral("Rot P"), QStringLiteral("deg"), -180, 180, 1);
-    makePoseEditor(implantRz_, "implantRz", QStringLiteral("Rot S"), QStringLiteral("deg"), -180, 180, 1);
+    makePoseEditor(
+        implantRx_, "implantRx", QStringLiteral("Rot L"), QStringLiteral("deg"), -180, 180, 1);
+    makePoseEditor(
+        implantRy_, "implantRy", QStringLiteral("Rot P"), QStringLiteral("deg"), -180, 180, 1);
+    makePoseEditor(
+        implantRz_, "implantRz", QStringLiteral("Rot S"), QStringLiteral("deg"), -180, 180, 1);
     clearanceTolerance_ = new NumericEditor(ctProperties_);
     clearanceTolerance_->setObjectName(QStringLiteral("clearanceTolerance"));
     clearanceTolerance_->setLabel(QStringLiteral("Tolerance"));
@@ -662,7 +737,8 @@ void WorkspaceWindow::buildDocks() {
     clearanceTolerance_->setRange(0.01, 5);
     clearanceTolerance_->setDecimals(2);
     clearanceTolerance_->setValue(0.1);
-    connect(clearanceTolerance_, &NumericEditor::valueChanged, this, [this](double) { refreshCad(); });
+    connect(
+        clearanceTolerance_, &NumericEditor::valueChanged, this, [this](double) { refreshCad(); });
     guideOffset_ = new NumericEditor(ctProperties_);
     guideOffset_->setObjectName(QStringLiteral("guideOffset"));
     guideOffset_->setLabel(QStringLiteral("Offset"));
@@ -685,13 +761,15 @@ void WorkspaceWindow::buildDocks() {
     guideButtonLayout->setSpacing(4);
     auto* previewGuideButton = new QPushButton(QStringLiteral("Preview"), guideButtons);
     previewGuideButton->setObjectName(QStringLiteral("previewGuide"));
-    previewGuideButton->setToolTip(QStringLiteral("Preview the guide. It does not replace the implant."));
+    previewGuideButton->setToolTip(
+        QStringLiteral("Preview the guide. It does not replace the implant."));
     auto* applyGuideButton = new QPushButton(QStringLiteral("Apply"), guideButtons);
     applyGuideButton->setObjectName(QStringLiteral("applyGuide"));
     applyGuideButton->setToolTip(QStringLiteral("Apply the guide preview."));
     auto* revertGuideButton = new QPushButton(QStringLiteral("Revert"), guideButtons);
     revertGuideButton->setObjectName(QStringLiteral("revertGuide"));
-    revertGuideButton->setToolTip(QStringLiteral("Discard the guide preview and the applied guide."));
+    revertGuideButton->setToolTip(
+        QStringLiteral("Discard the guide preview and the applied guide."));
     guideButtonLayout->addWidget(previewGuideButton);
     guideButtonLayout->addWidget(applyGuideButton);
     guideButtonLayout->addWidget(revertGuideButton);
@@ -708,18 +786,19 @@ void WorkspaceWindow::buildDocks() {
         QStringLiteral("Research volume preview. Not a clinical reconstruction."), ctProperties_);
     volumeNote->setWordWrap(true);
     volumeNote->setProperty("mfRole", QStringLiteral("secondary"));
-    auto* segmentNote = new QLabel(
-        QStringLiteral("Research segmentation. Not a clinical contour."), ctProperties_);
+    auto* segmentNote =
+        new QLabel(QStringLiteral("Research segmentation. Not a clinical contour."), ctProperties_);
     segmentNote->setWordWrap(true);
     segmentNote->setProperty("mfRole", QStringLiteral("secondary"));
-    segmentTool_ = new SegmentedControl(
-        {QStringLiteral("Threshold"), QStringLiteral("Grow"), QStringLiteral("Paint"),
-         QStringLiteral("Erase")},
-        ctProperties_);
+    segmentTool_ = new SegmentedControl({QStringLiteral("Threshold"),
+                                         QStringLiteral("Grow"),
+                                         QStringLiteral("Paint"),
+                                         QStringLiteral("Erase")},
+                                        ctProperties_);
     segmentTool_->setObjectName(QStringLiteral("segmentTool"));
     segmentTool_->setToolTip(QStringLiteral("Segmentation tool"));
-    segmentLabel_ = new SegmentedControl({QStringLiteral("Label 1"), QStringLiteral("Label 2")},
-                                         ctProperties_);
+    segmentLabel_ =
+        new SegmentedControl({QStringLiteral("Label 1"), QStringLiteral("Label 2")}, ctProperties_);
     segmentLabel_->setObjectName(QStringLiteral("segmentLabel"));
     segmentLabel_->setToolTip(QStringLiteral("Selected label"));
     segmentMin_ = new NumericEditor(ctProperties_);
@@ -743,9 +822,8 @@ void WorkspaceWindow::buildDocks() {
     segmentRadius_->setDecimals(1);
     segmentRadius_->setRange(0, 50);
     segmentRadius_->setValue(1);
-    segmentConnectivity_ =
-        new SegmentedControl({QStringLiteral("6-connected"), QStringLiteral("26-connected")},
-                             ctProperties_);
+    segmentConnectivity_ = new SegmentedControl(
+        {QStringLiteral("6-connected"), QStringLiteral("26-connected")}, ctProperties_);
     segmentConnectivity_->setObjectName(QStringLiteral("segmentConnectivity"));
     segmentConnectivity_->setToolTip(QStringLiteral("Region-grow connectivity"));
     segmentLimitSlice_ = new QCheckBox(QStringLiteral("Limit to axial slice"), ctProperties_);
@@ -814,16 +892,19 @@ void WorkspaceWindow::buildDocks() {
     ctLayout->addWidget(labelMeshButton_);
     ctLayout->addWidget(segmentUnsaved_);
     ctLayout->addWidget(segmentProvenance_);
-    measureNotice_ = new QLabel(
-        QStringLiteral("Research measurements. Not validated. Limited by CT resolution, segmentation, and landmark placement."),
-        ctProperties_);
+    measureNotice_ =
+        new QLabel(QStringLiteral("Research measurements. Not validated. Limited by CT resolution, "
+                                  "segmentation, and landmark placement."),
+                   ctProperties_);
     measureNotice_->setObjectName(QStringLiteral("measureNotice"));
     measureNotice_->setWordWrap(true);
     measureNotice_->setProperty("mfRole", QStringLiteral("secondary"));
-    measureTool_ = new SegmentedControl(
-        {QStringLiteral("Off"), QStringLiteral("Place"), QStringLiteral("Distance"),
-         QStringLiteral("Angle"), QStringLiteral("Area")},
-        ctProperties_);
+    measureTool_ = new SegmentedControl({QStringLiteral("Off"),
+                                         QStringLiteral("Place"),
+                                         QStringLiteral("Distance"),
+                                         QStringLiteral("Angle"),
+                                         QStringLiteral("Area")},
+                                        ctProperties_);
     measureTool_->setObjectName(QStringLiteral("measureTool"));
     measureTool_->setToolTip(QStringLiteral("Measurement tool"));
     measureSnap_ = new QCheckBox(QStringLiteral("Snap to surface"), ctProperties_);
@@ -841,8 +922,10 @@ void WorkspaceWindow::buildDocks() {
     landmarkList_->setMaximumHeight(64);
     measureTable_ = new QTableWidget(0, 4, ctProperties_);
     measureTable_->setObjectName(QStringLiteral("measureTable"));
-    measureTable_->setHorizontalHeaderLabels(
-        {QStringLiteral("Name"), QStringLiteral("Kind"), QStringLiteral("Value"), QStringLiteral("Unit")});
+    measureTable_->setHorizontalHeaderLabels({QStringLiteral("Name"),
+                                              QStringLiteral("Kind"),
+                                              QStringLiteral("Value"),
+                                              QStringLiteral("Unit")});
     measureTable_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     measureTable_->setSelectionBehavior(QAbstractItemView::SelectRows);
     measureTable_->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -962,7 +1045,10 @@ void WorkspaceWindow::buildDocks() {
         const int clamped = std::clamp(index, 0, 5);
         volumeViewport_->applyAnatomicalView(views[clamped], nullptr);
     });
-    connect(applyThresholdButton_, &QPushButton::clicked, this, &WorkspaceWindow::applySegmentThreshold);
+    connect(applyThresholdButton_,
+            &QPushButton::clicked,
+            this,
+            &WorkspaceWindow::applySegmentThreshold);
     connect(regionGrowButton_, &QPushButton::clicked, this, [this] { growFromCrosshair(); });
     connect(labelMeshButton_, &QPushButton::clicked, this, [this] { buildLabelMesh(); });
     connect(segmentPreviewToggle_, &QCheckBox::toggled, this, [this](bool) { refreshMpr(); });
@@ -986,7 +1072,9 @@ void WorkspaceWindow::buildDocks() {
         saveSegmentTools();
     });
     connect(segmentLimitSlice_, &QCheckBox::toggled, this, [this](bool) { saveSegmentTools(); });
-    connect(segmentTool_, &SegmentedControl::currentIndexChanged, this, [this](int) { saveSegmentTools(); });
+    connect(segmentTool_, &SegmentedControl::currentIndexChanged, this, [this](int) {
+        saveSegmentTools();
+    });
     connect(segmentLabel_, &SegmentedControl::currentIndexChanged, this, [this](int) {
         saveSegmentTools();
         refreshSegmentStatus();
@@ -994,7 +1082,10 @@ void WorkspaceWindow::buildDocks() {
     connect(measureTool_, &SegmentedControl::currentIndexChanged, this, [this](int) {
         measurePending_.clear();
     });
-    connect(deleteLandmarkButton, &QPushButton::clicked, this, &WorkspaceWindow::deleteSelectedLandmark);
+    connect(deleteLandmarkButton,
+            &QPushButton::clicked,
+            this,
+            &WorkspaceWindow::deleteSelectedLandmark);
     connect(undoMeasureButton, &QPushButton::clicked, this, &WorkspaceWindow::undoMeasure);
     connect(redoMeasureButton, &QPushButton::clicked, this, &WorkspaceWindow::redoMeasure);
     connect(landmarkList_, &QListWidget::currentRowChanged, this, [this](int row) {
@@ -1035,10 +1126,9 @@ void WorkspaceWindow::buildDocks() {
                                     medforge::ui::tokens::space8,
                                     medforge::ui::tokens::space8,
                                     medforge::ui::tokens::space8);
-    taskIdleLabel_ =
-        new QLabel(QStringLiteral(
-                       "No background task. Import and surface extraction run off the GUI thread."),
-                   tasks);
+    taskIdleLabel_ = new QLabel(
+        QStringLiteral("No background task. Import and surface extraction run off the GUI thread."),
+        tasks);
     taskIdleLabel_->setObjectName(QStringLiteral("taskStatus"));
     taskIdleLabel_->setWordWrap(true);
     taskIdleLabel_->setProperty("mfRole", QStringLiteral("secondary"));
@@ -1127,8 +1217,9 @@ void WorkspaceWindow::buildViewports() {
     view3dTitle->setMargin(medforge::ui::tokens::space8);
     sampleViewport_ = new SampleViewport(view3d);
     volumeViewport_ = new VolumeViewport(view3d);
-    connect(volumeViewport_, &VolumeViewport::gizmoDragged, this,
-            [this](int axis, double delta) { dragImplantGizmo(axis, delta); });
+    connect(volumeViewport_, &VolumeViewport::gizmoDragged, this, [this](int axis, double delta) {
+        dragImplantGizmo(axis, delta);
+    });
     volumeViewport_->hide();
     view3dLayout->addWidget(view3dTitle);
     view3dLayout->addWidget(sampleViewport_, 1);
@@ -1241,13 +1332,14 @@ void WorkspaceWindow::refreshSurfaceView() {
         volumeViewport_->clearMesh();
     }
     const medforge::geometry::MeshStatistics stats = medforge::geometry::measureMesh(shown);
-    meshStats_->setText(QStringLiteral("%1%2 triangles\nVolume %3 mm³\n%4 MB volume, %5 MB mesh\n%6 ms")
-                            .arg(meshPreviewActive_ ? QStringLiteral("Preview ") : QString())
-                            .arg(stats.triangleCount)
-                            .arg(stats.volumeMm3, 0, 'f', 1)
-                            .arg(static_cast<double>(surfaceResult_.volumeBytes) / 1.0e6, 0, 'f', 2)
-                            .arg(static_cast<double>(surfaceResult_.meshBytes) / 1.0e6, 0, 'f', 2)
-                            .arg(surfaceResult_.elapsedMs, 0, 'f', 0));
+    meshStats_->setText(
+        QStringLiteral("%1%2 triangles\nVolume %3 mm³\n%4 MB volume, %5 MB mesh\n%6 ms")
+            .arg(meshPreviewActive_ ? QStringLiteral("Preview ") : QString())
+            .arg(stats.triangleCount)
+            .arg(stats.volumeMm3, 0, 'f', 1)
+            .arg(static_cast<double>(surfaceResult_.volumeBytes) / 1.0e6, 0, 'f', 2)
+            .arg(static_cast<double>(surfaceResult_.meshBytes) / 1.0e6, 0, 'f', 2)
+            .arg(surfaceResult_.elapsedMs, 0, 'f', 0));
     if (meshDiagnostics_ != nullptr) {
         meshDiagnostics_->setText(meshDiagnostics());
     }
@@ -1256,7 +1348,8 @@ void WorkspaceWindow::refreshSurfaceView() {
     refreshMeasures();
 }
 
-void WorkspaceWindow::applySurface(int generation, const medforge::rendering::SurfaceResult& result) {
+void WorkspaceWindow::applySurface(int generation,
+                                   const medforge::rendering::SurfaceResult& result) {
     if (surfaceThread_.joinable()) {
         surfaceThread_.join();
     }
@@ -1265,10 +1358,11 @@ void WorkspaceWindow::applySurface(int generation, const medforge::rendering::Su
     }
     taskProgress_->setRunning(false);
     taskProgress_->setPercent(0);
-    taskIdleLabel_->setText(
-        QStringLiteral("No background task. Import and surface extraction run off the GUI thread."));
+    taskIdleLabel_->setText(QStringLiteral(
+        "No background task. Import and surface extraction run off the GUI thread."));
     if (result.status == medforge::rendering::SurfaceStatus::Cancelled) {
-        errorBanner_->setMessage(Banner::Severity::Notice, QStringLiteral("Surface extraction cancelled"));
+        errorBanner_->setMessage(Banner::Severity::Notice,
+                                 QStringLiteral("Surface extraction cancelled"));
         errorBanner_->setVisible(true);
         return;
     }
@@ -1291,8 +1385,8 @@ void WorkspaceWindow::applySurface(int generation, const medforge::rendering::Su
     surfaceMesh_ = result.mesh;
     resetMeshEdits();
     refreshSurfaceView();
-    if (errorBanner_->isVisible() && errorBanner_->message().contains(QStringLiteral("surface"),
-                                                                      Qt::CaseInsensitive)) {
+    if (errorBanner_->isVisible() &&
+        errorBanner_->message().contains(QStringLiteral("surface"), Qt::CaseInsensitive)) {
         errorBanner_->hide();
     }
 }
@@ -1317,14 +1411,15 @@ void WorkspaceWindow::buildSurface(int delayBeforeMs) {
     taskIdleLabel_->setText(QStringLiteral("Building surface"));
     taskProgress_->setRunning(true);
     taskProgress_->setPercent(0);
-    surfaceThread_ = std::thread([this, generation, grid = std::move(grid), threshold, token,
-                                  delayBeforeMs] {
-        const medforge::rendering::SurfaceResult result =
-            medforge::rendering::extractIsosurface(grid, threshold, token, delayBeforeMs);
-        QMetaObject::invokeMethod(
-            this, [this, generation, result] { applySurface(generation, result); },
-            Qt::QueuedConnection);
-    });
+    surfaceThread_ =
+        std::thread([this, generation, grid = std::move(grid), threshold, token, delayBeforeMs] {
+            const medforge::rendering::SurfaceResult result =
+                medforge::rendering::extractIsosurface(grid, threshold, token, delayBeforeMs);
+            QMetaObject::invokeMethod(
+                this,
+                [this, generation, result] { applySurface(generation, result); },
+                Qt::QueuedConnection);
+        });
 }
 
 void WorkspaceWindow::shutdownImport() {
@@ -1346,6 +1441,8 @@ void WorkspaceWindow::importFolder(const QString& folder, int delayPerFileMs) {
     if (actions_->phase() == WorkspaceActions::Phase::Importing || importThread_.joinable()) {
         return;
     }
+    restoreProject_ = false;
+    seriesFolder_ = folderPath(folder);
     shutdownSegment();
     shutdownMeshEdit();
     shutdownSurface();
@@ -1380,6 +1477,7 @@ void WorkspaceWindow::importFolder(const QString& folder, int delayPerFileMs) {
 
 void WorkspaceWindow::clearLoadedSeries() {
     hasVolume_ = false;
+    seriesFolder_.clear();
     volume_ = {};
     axialViewport_->clearImage();
     sagittalViewport_->clearImage();
@@ -1412,9 +1510,10 @@ void WorkspaceWindow::applyImportResult(const medforge::imaging::ImportResult& r
     }
     taskProgress_->setRunning(false);
     taskProgress_->setPercent(0);
-    taskIdleLabel_->setText(
-        QStringLiteral("No background task. Import and surface extraction run off the GUI thread."));
+    taskIdleLabel_->setText(QStringLiteral(
+        "No background task. Import and surface extraction run off the GUI thread."));
     if (result.status == medforge::imaging::ImportStatus::Cancelled) {
+        restoreProject_ = false;
         if (hasVolume_) {
             actions_->showStudy(QStringLiteral("CT series  %1 slices").arg(volume_.slices));
         } else {
@@ -1425,6 +1524,7 @@ void WorkspaceWindow::applyImportResult(const medforge::imaging::ImportResult& r
         return;
     }
     if (result.status != medforge::imaging::ImportStatus::Ok) {
+        restoreProject_ = false;
         clearLoadedSeries();
         actions_->failImport(QString::fromStdString(result.message));
         updateProperties();
@@ -1479,6 +1579,9 @@ void WorkspaceWindow::applyImportResult(const medforge::imaging::ImportResult& r
         errorBanner_->setVisible(true);
     }
     refreshMpr();
+    if (restoreProject_) {
+        restoreOpenedProject();
+    }
 }
 
 void WorkspaceWindow::refreshMpr() {
@@ -1494,8 +1597,7 @@ void WorkspaceWindow::refreshMpr() {
         medforge::imaging::crosshairLps(crosshair_, volume_);
     const float hu = volume_.huAt(crosshair_.i, crosshair_.j, crosshair_.k);
     const QString huText =
-        std::isfinite(hu) ? QString::number(qRound(static_cast<double>(hu)))
-                          : QStringLiteral("—");
+        std::isfinite(hu) ? QString::number(qRound(static_cast<double>(hu))) : QStringLiteral("—");
     cursorLabel_->setText(QStringLiteral("i=%1  j=%2  k=%3    L %4  P %5  S %6 mm    HU %7")
                               .arg(crosshair_.i)
                               .arg(crosshair_.j)
@@ -1536,12 +1638,14 @@ medforge::geometry::ScalarGrid gridFromLabel(const medforge::imaging::LabelMap& 
 } // namespace
 
 void WorkspaceWindow::paintPlane(MprViewport* view, medforge::imaging::MprPlane plane, int index) {
-    const medforge::imaging::MprImage slice = medforge::imaging::extractPlane(volume_, plane, index);
+    const medforge::imaging::MprImage slice =
+        medforge::imaging::extractPlane(volume_, plane, index);
     int labelWidth = 0;
     int labelHeight = 0;
     std::vector<std::uint8_t> labels;
     if (labelMap_.columns == volume_.columns) {
-        medforge::imaging::extractLabelPlane(labelMap_, plane, index, &labelWidth, &labelHeight, &labels);
+        medforge::imaging::extractLabelPlane(
+            labelMap_, plane, index, &labelWidth, &labelHeight, &labels);
     }
     const bool preview = segmentPreviewToggle_ != nullptr && segmentPreviewToggle_->isChecked();
     const float minHu = segmentMin_ != nullptr ? static_cast<float>(segmentMin_->value()) : 0;
@@ -1553,11 +1657,13 @@ void WorkspaceWindow::paintPlane(MprViewport* view, medforge::imaging::MprPlane 
             break;
         }
     }
-    QImage image(slice.width, slice.height, colored ? QImage::Format_RGB32 : QImage::Format_Grayscale8);
+    QImage image(
+        slice.width, slice.height, colored ? QImage::Format_RGB32 : QImage::Format_Grayscale8);
     for (int y = 0; y < slice.height; ++y) {
         for (int x = 0; x < slice.width; ++x) {
-            const std::size_t offset = static_cast<std::size_t>(y) * static_cast<std::size_t>(slice.width) +
-                                       static_cast<std::size_t>(x);
+            const std::size_t offset =
+                static_cast<std::size_t>(y) * static_cast<std::size_t>(slice.width) +
+                static_cast<std::size_t>(x);
             const int gray = medforge::imaging::huToDisplayGray(slice.hu[offset], windowLevel_);
             if (!colored) {
                 image.scanLine(y)[x] = static_cast<uchar>(gray);
@@ -1585,11 +1691,15 @@ void WorkspaceWindow::paintPlane(MprViewport* view, medforge::imaging::MprPlane 
     } else {
         view->setMillimetersPerPixel(spacing.x, spacing.z);
     }
-    const medforge::imaging::PlanePixel pixel = medforge::imaging::crosshairPixel(crosshair_, plane);
+    const medforge::imaging::PlanePixel pixel =
+        medforge::imaging::crosshairPixel(crosshair_, plane);
     view->setCrosshair(QPoint(pixel.x, pixel.y));
-    const medforge::imaging::ViewLabels orientation = medforge::imaging::orientationLabels(volume_, plane);
-    view->setOrientation(QString(QChar(orientation.left)), QString(QChar(orientation.right)),
-                         QString(QChar(orientation.top)), QString(QChar(orientation.bottom)));
+    const medforge::imaging::ViewLabels orientation =
+        medforge::imaging::orientationLabels(volume_, plane);
+    view->setOrientation(QString(QChar(orientation.left)),
+                         QString(QChar(orientation.right)),
+                         QString(QChar(orientation.top)),
+                         QString(QChar(orientation.bottom)));
 }
 
 void WorkspaceWindow::handlePlanePointer(medforge::imaging::MprPlane plane, int x, int y) {
@@ -1625,8 +1735,8 @@ void WorkspaceWindow::commitSegmentEdit(medforge::imaging::LabelEdit edit, const
     if (edit.changes.empty() || !hasVolume_) {
         return;
     }
-    if (!segmentHistory_.execute(
-            std::make_unique<medforge::imaging::LabelMapCommand>(&labelMap_, std::move(edit), name))) {
+    if (!segmentHistory_.execute(std::make_unique<medforge::imaging::LabelMapCommand>(
+            &labelMap_, std::move(edit), name))) {
         return;
     }
     ++segmentRevision_;
@@ -1648,13 +1758,15 @@ void WorkspaceWindow::refreshSegmentStatus() {
     }
     segmentUnsaved_->setText(segmentUnsaved() ? QStringLiteral("Unsaved mask")
                                               : QStringLiteral("Mask saved"));
-    const std::size_t previewCount = medforge::imaging::countInHuRange(
-        volume_, static_cast<float>(segmentMin_->value()), static_cast<float>(segmentMax_->value()));
+    const std::size_t previewCount =
+        medforge::imaging::countInHuRange(volume_,
+                                          static_cast<float>(segmentMin_->value()),
+                                          static_cast<float>(segmentMax_->value()));
     segmentPreview_->setText(previewCount == 1
                                  ? QStringLiteral("1 voxel in range")
                                  : QStringLiteral("%1 voxels in range").arg(previewCount));
-    const std::size_t labeled = medforge::imaging::countLabel(labelMap_, 1) +
-                                medforge::imaging::countLabel(labelMap_, 2);
+    const std::size_t labeled =
+        medforge::imaging::countLabel(labelMap_, 1) + medforge::imaging::countLabel(labelMap_, 2);
     segmentRow_->setCountText(QString::number(labeled));
     segmentRow_->setVisible(labeled > 0 || segmentUnsaved());
 }
@@ -1744,7 +1856,9 @@ void WorkspaceWindow::applySegmentThreshold() {
         labelMap_ = medforge::imaging::emptyLabelMap(volume_);
     }
     const std::uint8_t label = static_cast<std::uint8_t>(segmentLabel_->currentIndex() + 1);
-    commitSegmentEdit(medforge::imaging::thresholdEdit(volume_, labelMap_, label,
+    commitSegmentEdit(medforge::imaging::thresholdEdit(volume_,
+                                                       labelMap_,
+                                                       label,
                                                        static_cast<float>(segmentMin_->value()),
                                                        static_cast<float>(segmentMax_->value())),
                       "threshold");
@@ -1785,13 +1899,37 @@ void WorkspaceWindow::growFromCrosshair(int delayBeforeMs) {
     taskIdleLabel_->setText(QStringLiteral("Growing region"));
     taskProgress_->setRunning(true);
     taskProgress_->setPercent(0);
-    segmentThread_ = std::thread([this, generation, volume, map, seedI, seedJ, seedK, label, minHu,
-                                  maxHu, connectivity, bounds, token, delayBeforeMs] {
-        const medforge::imaging::SegmentResult result = medforge::imaging::regionGrowEdit(
-            volume, map, seedI, seedJ, seedK, label, minHu, maxHu, connectivity, bounds, token,
-            delayBeforeMs);
+    segmentThread_ = std::thread([this,
+                                  generation,
+                                  volume,
+                                  map,
+                                  seedI,
+                                  seedJ,
+                                  seedK,
+                                  label,
+                                  minHu,
+                                  maxHu,
+                                  connectivity,
+                                  bounds,
+                                  token,
+                                  delayBeforeMs] {
+        const medforge::imaging::SegmentResult result =
+            medforge::imaging::regionGrowEdit(volume,
+                                              map,
+                                              seedI,
+                                              seedJ,
+                                              seedK,
+                                              label,
+                                              minHu,
+                                              maxHu,
+                                              connectivity,
+                                              bounds,
+                                              token,
+                                              delayBeforeMs);
         QMetaObject::invokeMethod(
-            this, [this, generation, result] { applyGrow(generation, result); }, Qt::QueuedConnection);
+            this,
+            [this, generation, result] { applyGrow(generation, result); },
+            Qt::QueuedConnection);
     });
 }
 
@@ -1804,17 +1942,18 @@ void WorkspaceWindow::applyGrow(int generation, const medforge::imaging::Segment
     }
     taskProgress_->setRunning(false);
     taskProgress_->setPercent(0);
-    taskIdleLabel_->setText(
-        QStringLiteral("No background task. Import and surface extraction run off the GUI thread."));
+    taskIdleLabel_->setText(QStringLiteral(
+        "No background task. Import and surface extraction run off the GUI thread."));
     if (result.cancelled) {
-        errorBanner_->setMessage(Banner::Severity::Notice, QStringLiteral("Segmentation cancelled"));
+        errorBanner_->setMessage(Banner::Severity::Notice,
+                                 QStringLiteral("Segmentation cancelled"));
         errorBanner_->setVisible(true);
         return;
     }
     if (result.edit.changes.empty()) {
-        errorBanner_->setMessage(Banner::Severity::Warning,
-                                 QString::fromStdString(result.message.empty() ? "Nothing to segment"
-                                                                               : result.message));
+        errorBanner_->setMessage(
+            Banner::Severity::Warning,
+            QString::fromStdString(result.message.empty() ? "Nothing to segment" : result.message));
         errorBanner_->setVisible(true);
         return;
     }
@@ -1849,7 +1988,8 @@ void WorkspaceWindow::paintSegment(medforge::imaging::MprPlane plane, int x, int
     } else {
         stamp.slice = crosshair_.j;
     }
-    commitSegmentEdit(medforge::imaging::brushEdit(labelMap_, stamp), tool == 3 ? "erase" : "paint");
+    commitSegmentEdit(medforge::imaging::brushEdit(labelMap_, stamp),
+                      tool == 3 ? "erase" : "paint");
 }
 
 void WorkspaceWindow::undoSegment() {
@@ -1902,8 +2042,9 @@ bool WorkspaceWindow::loadMask(const QString& path, QString* error) {
         }
         return false;
     }
-    if (loaded.seriesInstanceUid != volume_.seriesInstanceUid || loaded.columns != volume_.columns ||
-        loaded.rows != volume_.rows || loaded.slices != volume_.slices) {
+    if (loaded.seriesInstanceUid != volume_.seriesInstanceUid ||
+        loaded.columns != volume_.columns || loaded.rows != volume_.rows ||
+        loaded.slices != volume_.slices) {
         if (error != nullptr) {
             *error = QStringLiteral("Mask does not match this series");
         }
@@ -1958,22 +2099,24 @@ void WorkspaceWindow::buildLabelMesh(int delayBeforeMs) {
     taskIdleLabel_->setText(QStringLiteral("Building surface"));
     taskProgress_->setRunning(true);
     taskProgress_->setPercent(0);
-    surfaceThread_ = std::thread([this, generation, grid = std::move(grid), token, delayBeforeMs, label] {
-        const medforge::rendering::SurfaceResult result =
-            medforge::rendering::extractIsosurface(grid, 0.5, token, delayBeforeMs);
-        QMetaObject::invokeMethod(
-            this,
-            [this, generation, result, label] {
-                applySurface(generation, result);
-                if (result.status == medforge::rendering::SurfaceStatus::Ok && labelMeshRequest_) {
-                    segmentProvenance_->setText(
-                        QStringLiteral("Label %1 of %2")
-                            .arg(label)
-                            .arg(QString::fromStdString(volume_.seriesInstanceUid)));
-                }
-            },
-            Qt::QueuedConnection);
-    });
+    surfaceThread_ =
+        std::thread([this, generation, grid = std::move(grid), token, delayBeforeMs, label] {
+            const medforge::rendering::SurfaceResult result =
+                medforge::rendering::extractIsosurface(grid, 0.5, token, delayBeforeMs);
+            QMetaObject::invokeMethod(
+                this,
+                [this, generation, result, label] {
+                    applySurface(generation, result);
+                    if (result.status == medforge::rendering::SurfaceStatus::Ok &&
+                        labelMeshRequest_) {
+                        segmentProvenance_->setText(
+                            QStringLiteral("Label %1 of %2")
+                                .arg(label)
+                                .arg(QString::fromStdString(volume_.seriesInstanceUid)));
+                    }
+                },
+                Qt::QueuedConnection);
+        });
 }
 
 bool WorkspaceWindow::segmentUnsaved() const {
@@ -2008,11 +2151,14 @@ QString WorkspaceWindow::meshDiagnostics() const {
     if (meshPreviewActive_) {
         text += QStringLiteral("Preview — not applied\n");
     }
-    text += topology.volumeValid ? QStringLiteral("Watertight\n") : QStringLiteral("Not watertight\n");
+    text +=
+        topology.volumeValid ? QStringLiteral("Watertight\n") : QStringLiteral("Not watertight\n");
     text += QStringLiteral("Area %1 mm²\n").arg(topology.surfaceAreaMm2, 0, 'f', 3);
-    text += topology.volumeValid ? QStringLiteral("Volume %1 mm³\n").arg(topology.volumeMm3, 0, 'f', 3)
-                                  : QStringLiteral("Volume unavailable\n");
-    text += QStringLiteral("%1 components, %2 open edges, %3 non-manifold edges\nSTL units: millimeters")
+    text += topology.volumeValid
+                ? QStringLiteral("Volume %1 mm³\n").arg(topology.volumeMm3, 0, 'f', 3)
+                : QStringLiteral("Volume unavailable\n");
+    text += QStringLiteral(
+                "%1 components, %2 open edges, %3 non-manifold edges\nSTL units: millimeters")
                 .arg(topology.componentCount)
                 .arg(topology.openEdgeCount)
                 .arg(topology.nonManifoldEdgeCount);
@@ -2043,30 +2189,32 @@ void WorkspaceWindow::previewMeshRepair(int delayBeforeMs) {
     taskIdleLabel_->setText(QStringLiteral("Repairing mesh"));
     taskProgress_->setRunning(true);
     taskProgress_->setPercent(0);
-    meshEditThread_ = std::thread([this, generation, source, token, tool, iterations, keep, holes,
-                                   delayBeforeMs] {
-        if (delayBeforeMs > 0) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(delayBeforeMs));
-        }
-        medforge::geometry::MeshEditResult result;
-        if (token.isCancelled()) {
-            result.cancelled = true;
-            result.message = "Mesh edit cancelled";
-            result.mesh = source;
-        } else if (tool == 1) {
-            result = medforge::geometry::decimateMesh(source, keep, token);
-        } else if (tool == 2) {
-            result = medforge::geometry::fillSmallHoles(source, holes, token);
-        } else {
-            result = medforge::geometry::smoothMesh(source, iterations, 0.5, token);
-        }
-        QMetaObject::invokeMethod(
-            this, [this, generation, result] { applyMeshEditResult(generation, result); },
-            Qt::QueuedConnection);
-    });
+    meshEditThread_ = std::thread(
+        [this, generation, source, token, tool, iterations, keep, holes, delayBeforeMs] {
+            if (delayBeforeMs > 0) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(delayBeforeMs));
+            }
+            medforge::geometry::MeshEditResult result;
+            if (token.isCancelled()) {
+                result.cancelled = true;
+                result.message = "Mesh edit cancelled";
+                result.mesh = source;
+            } else if (tool == 1) {
+                result = medforge::geometry::decimateMesh(source, keep, token);
+            } else if (tool == 2) {
+                result = medforge::geometry::fillSmallHoles(source, holes, token);
+            } else {
+                result = medforge::geometry::smoothMesh(source, iterations, 0.5, token);
+            }
+            QMetaObject::invokeMethod(
+                this,
+                [this, generation, result] { applyMeshEditResult(generation, result); },
+                Qt::QueuedConnection);
+        });
 }
 
-void WorkspaceWindow::applyMeshEditResult(int generation, medforge::geometry::MeshEditResult result) {
+void WorkspaceWindow::applyMeshEditResult(int generation,
+                                          medforge::geometry::MeshEditResult result) {
     if (meshEditThread_.joinable()) {
         meshEditThread_.join();
     }
@@ -2075,13 +2223,14 @@ void WorkspaceWindow::applyMeshEditResult(int generation, medforge::geometry::Me
     }
     taskProgress_->setRunning(false);
     taskProgress_->setPercent(0);
-    taskIdleLabel_->setText(
-        QStringLiteral("No background task. Import and surface extraction run off the GUI thread."));
+    taskIdleLabel_->setText(QStringLiteral(
+        "No background task. Import and surface extraction run off the GUI thread."));
     if (result.cancelled || !result.ok) {
         meshPreviewActive_ = false;
         meshPreview_ = {};
         refreshSurfaceView();
-        errorBanner_->setMessage(result.cancelled ? Banner::Severity::Notice : Banner::Severity::Warning,
+        errorBanner_->setMessage(result.cancelled ? Banner::Severity::Notice
+                                                  : Banner::Severity::Warning,
                                  QString::fromStdString(result.message));
         errorBanner_->setVisible(true);
         return;
@@ -2096,7 +2245,8 @@ void WorkspaceWindow::applyMeshPreview() {
     if (!meshPreviewActive_ || !hasSurface_) {
         return;
     }
-    meshHistory_.execute(std::make_unique<MeshEditCommand>(&surfaceMesh_, surfaceMesh_, meshPreview_));
+    meshHistory_.execute(
+        std::make_unique<MeshEditCommand>(&surfaceMesh_, surfaceMesh_, meshPreview_));
     meshPreviewActive_ = false;
     meshPreview_ = {};
     refreshSurfaceView();
@@ -2168,9 +2318,12 @@ bool WorkspaceWindow::exportBinaryStl(const QString& path, QString* error) {
     const medforge::geometry::MeshTopology source = medforge::geometry::inspectMesh(surfaceMesh_);
     const medforge::geometry::MeshTopology back = medforge::geometry::inspectMesh(loaded);
     const auto near = [](double left, double right) { return std::abs(left - right) < 1e-3; };
-    if (!near(source.boundsMin.x, back.boundsMin.x) || !near(source.boundsMin.y, back.boundsMin.y) ||
-        !near(source.boundsMin.z, back.boundsMin.z) || !near(source.boundsMax.x, back.boundsMax.x) ||
-        !near(source.boundsMax.y, back.boundsMax.y) || !near(source.boundsMax.z, back.boundsMax.z)) {
+    if (!near(source.boundsMin.x, back.boundsMin.x) ||
+        !near(source.boundsMin.y, back.boundsMin.y) ||
+        !near(source.boundsMin.z, back.boundsMin.z) ||
+        !near(source.boundsMax.x, back.boundsMax.x) ||
+        !near(source.boundsMax.y, back.boundsMax.y) ||
+        !near(source.boundsMax.z, back.boundsMax.z)) {
         if (error != nullptr) {
             *error = QStringLiteral("Reimport bounds do not match the source mesh");
         }
@@ -2179,7 +2332,8 @@ bool WorkspaceWindow::exportBinaryStl(const QString& path, QString* error) {
     QString notice = QStringLiteral("Exported %1 triangles. STL units are millimeters.")
                          .arg(source.triangleCount);
     if (hasVolume_) {
-        notice += QStringLiteral(" Series %1").arg(QString::fromStdString(volume_.seriesInstanceUid));
+        notice +=
+            QStringLiteral(" Series %1").arg(QString::fromStdString(volume_.seriesInstanceUid));
     }
     errorBanner_->setMessage(Banner::Severity::Notice, notice);
     errorBanner_->setVisible(true);
@@ -2187,7 +2341,8 @@ bool WorkspaceWindow::exportBinaryStl(const QString& path, QString* error) {
 }
 
 void WorkspaceWindow::commitMeasures(medforge::geometry::MeasureDocument next) {
-    measureHistory_.execute(std::make_unique<MeasureEditCommand>(&measures_, measures_, std::move(next)));
+    measureHistory_.execute(
+        std::make_unique<MeasureEditCommand>(&measures_, measures_, std::move(next)));
     refreshMeasures();
 }
 
@@ -2202,14 +2357,16 @@ void WorkspaceWindow::resetMeasures() {
 }
 
 int WorkspaceWindow::nearestLandmark() const {
-    const medforge::core::CoordinateResult here = medforge::imaging::crosshairLps(crosshair_, volume_);
+    const medforge::core::CoordinateResult here =
+        medforge::imaging::crosshairLps(crosshair_, volume_);
     if (!here.ok()) {
         return -1;
     }
     int best = -1;
     double distance = 8;
     for (int index = 0; index < static_cast<int>(measures_.landmarks.size()); ++index) {
-        const medforge::core::Vec3& point = measures_.landmarks[static_cast<std::size_t>(index)].positionMm;
+        const medforge::core::Vec3& point =
+            measures_.landmarks[static_cast<std::size_t>(index)].positionMm;
         const double dx = point.x - here.value.x;
         const double dy = point.y - here.value.y;
         const double dz = point.z - here.value.z;
@@ -2242,31 +2399,32 @@ void WorkspaceWindow::updateMeasureOverlays() {
         QVector<Marker> located;
         for (int index = 0; index < static_cast<int>(measures_.landmarks.size()); ++index) {
             const medforge::core::CoordinateResult voxel = medforge::core::patientLpsToVoxelIndex(
-                measures_.landmarks[static_cast<std::size_t>(index)].positionMm, volume_.geometry.geometry);
+                measures_.landmarks[static_cast<std::size_t>(index)].positionMm,
+                volume_.geometry.geometry);
             if (!voxel.ok()) {
                 continue;
             }
-            const double along = plane == medforge::imaging::MprPlane::Axial     ? voxel.value.z
+            const double along = plane == medforge::imaging::MprPlane::Axial      ? voxel.value.z
                                  : plane == medforge::imaging::MprPlane::Sagittal ? voxel.value.x
                                                                                   : voxel.value.y;
             if (std::abs(along - slice) > 0.51) {
                 continue;
             }
-            const int x = static_cast<int>(std::lround(plane == medforge::imaging::MprPlane::Sagittal
-                                                           ? voxel.value.y
-                                                           : voxel.value.x));
-            const int y = static_cast<int>(std::lround(plane == medforge::imaging::MprPlane::Axial
-                                                           ? voxel.value.y
-                                                           : voxel.value.z));
+            const int x = static_cast<int>(std::lround(
+                plane == medforge::imaging::MprPlane::Sagittal ? voxel.value.y : voxel.value.x));
+            const int y = static_cast<int>(std::lround(
+                plane == medforge::imaging::MprPlane::Axial ? voxel.value.y : voxel.value.z));
             const QPoint pixel(x, y);
             markers.push_back(PlaneAnnotation{
-                pixel, QString::fromStdString(measures_.landmarks[static_cast<std::size_t>(index)].name),
+                pixel,
+                QString::fromStdString(measures_.landmarks[static_cast<std::size_t>(index)].name),
                 index == selectedLandmark_});
             located.push_back(Marker{index, pixel});
         }
         QVector<PlaneLink> links;
         for (const auto& measure : measures_.measures) {
-            if (measure.kind != medforge::geometry::MeasureKind::Distance || measure.landmarks.size() < 2) {
+            if (measure.kind != medforge::geometry::MeasureKind::Distance ||
+                measure.landmarks.size() < 2) {
                 continue;
             }
             const Marker* ends[2] = {};
@@ -2315,18 +2473,21 @@ void WorkspaceWindow::refreshMeasures() {
     for (int row = 0; row < measureTable_->rowCount(); ++row) {
         const auto& measure = measures_.measures[static_cast<std::size_t>(row)];
         const auto& value = values[static_cast<std::size_t>(row)];
-        const QString kind = measure.kind == medforge::geometry::MeasureKind::Angle       ? QStringLiteral("Angle")
-                             : measure.kind == medforge::geometry::MeasureKind::SectionArea ? QStringLiteral("Area")
-                                                                                            : QStringLiteral("Distance");
-        const QString shown = value.ok ? QString::number(value.value, 'f', 3) : QString::fromStdString(value.message);
-        const QString texts[] = {QString::fromStdString(measure.name), kind, shown,
-                                 QString::fromStdString(value.unit)};
+        const QString kind = measure.kind == medforge::geometry::MeasureKind::Angle
+                                 ? QStringLiteral("Angle")
+                             : measure.kind == medforge::geometry::MeasureKind::SectionArea
+                                 ? QStringLiteral("Area")
+                                 : QStringLiteral("Distance");
+        const QString shown =
+            value.ok ? QString::number(value.value, 'f', 3) : QString::fromStdString(value.message);
+        const QString texts[] = {
+            QString::fromStdString(measure.name), kind, shown, QString::fromStdString(value.unit)};
         for (int column = 0; column < 4; ++column) {
             measureTable_->setItem(row, column, new QTableWidgetItem(texts[column]));
         }
     }
-    const bool selected = selectedLandmark_ >= 0 &&
-                          selectedLandmark_ < static_cast<int>(measures_.landmarks.size());
+    const bool selected =
+        selectedLandmark_ >= 0 && selectedLandmark_ < static_cast<int>(measures_.landmarks.size());
     measureName_->setEnabled(selected);
     measureL_->setEnabled(selected);
     measureP_->setEnabled(selected);
@@ -2367,15 +2528,17 @@ void WorkspaceWindow::activateMeasureAtCrosshair() {
     const int third = need == 3 ? measurePending_[2] : second;
     measurePending_.clear();
     auto next = measures_;
-    const auto kind = measureTool_->currentIndex() == 2   ? medforge::geometry::MeasureKind::Distance
-                      : measureTool_->currentIndex() == 3 ? medforge::geometry::MeasureKind::Angle
-                                                          : medforge::geometry::MeasureKind::SectionArea;
-    const std::string name = std::string(kind == medforge::geometry::MeasureKind::Distance   ? "D"
-                                         : kind == medforge::geometry::MeasureKind::Angle    ? "A"
-                                                                                             : "S") +
+    const auto kind = measureTool_->currentIndex() == 2 ? medforge::geometry::MeasureKind::Distance
+                      : measureTool_->currentIndex() == 3
+                          ? medforge::geometry::MeasureKind::Angle
+                          : medforge::geometry::MeasureKind::SectionArea;
+    const std::string name = std::string(kind == medforge::geometry::MeasureKind::Distance ? "D"
+                                         : kind == medforge::geometry::MeasureKind::Angle  ? "A"
+                                                                                           : "S") +
                              std::to_string(next.measures.size() + 1);
-    std::vector<medforge::core::EntityId> ids = {next.landmarks[static_cast<std::size_t>(first)].id,
-                                                 next.landmarks[static_cast<std::size_t>(second)].id};
+    std::vector<medforge::core::EntityId> ids = {
+        next.landmarks[static_cast<std::size_t>(first)].id,
+        next.landmarks[static_cast<std::size_t>(second)].id};
     if (need == 3) {
         ids.push_back(next.landmarks[static_cast<std::size_t>(third)].id);
     }
@@ -2389,7 +2552,8 @@ int WorkspaceWindow::placeLandmarkAtVoxel(int i, int j, int k) {
         return -1;
     }
     const medforge::core::CoordinateResult lps = medforge::core::voxelIndexToPatientLps(
-        medforge::core::Vec3{static_cast<double>(i), static_cast<double>(j), static_cast<double>(k)},
+        medforge::core::Vec3{
+            static_cast<double>(i), static_cast<double>(j), static_cast<double>(k)},
         volume_.geometry.geometry);
     if (!lps.ok()) {
         return -1;
@@ -2424,7 +2588,8 @@ void WorkspaceWindow::selectLandmark(int index) {
 }
 
 void WorkspaceWindow::deleteSelectedLandmark() {
-    if (selectedLandmark_ < 0 || selectedLandmark_ >= static_cast<int>(measures_.landmarks.size())) {
+    if (selectedLandmark_ < 0 ||
+        selectedLandmark_ >= static_cast<int>(measures_.landmarks.size())) {
         return;
     }
     auto next = measures_;
@@ -2434,12 +2599,14 @@ void WorkspaceWindow::deleteSelectedLandmark() {
 }
 
 void WorkspaceWindow::moveSelectedLandmark(double lMm, double pMm, double sMm) {
-    if (selectedLandmark_ < 0 || selectedLandmark_ >= static_cast<int>(measures_.landmarks.size())) {
+    if (selectedLandmark_ < 0 ||
+        selectedLandmark_ >= static_cast<int>(measures_.landmarks.size())) {
         return;
     }
     auto next = measures_;
     next.moveLandmark(next.landmarks[static_cast<std::size_t>(selectedLandmark_)].id,
-                      medforge::core::Vec3{lMm, pMm, sMm}, false);
+                      medforge::core::Vec3{lMm, pMm, sMm},
+                      false);
     commitMeasures(std::move(next));
 }
 
@@ -2449,7 +2616,8 @@ int WorkspaceWindow::defineDistance(int first, int second) {
     }
     auto next = measures_;
     const int index = static_cast<int>(next.measures.size());
-    next.addMeasure("D" + std::to_string(index + 1), medforge::geometry::MeasureKind::Distance,
+    next.addMeasure("D" + std::to_string(index + 1),
+                    medforge::geometry::MeasureKind::Distance,
                     {next.landmarks[static_cast<std::size_t>(first)].id,
                      next.landmarks[static_cast<std::size_t>(second)].id});
     commitMeasures(std::move(next));
@@ -2459,7 +2627,8 @@ int WorkspaceWindow::defineDistance(int first, int second) {
 double WorkspaceWindow::measureValue(int index) const {
     const auto values =
         medforge::geometry::evaluateMeasures(measures_, hasSurface_ ? &surfaceMesh_ : nullptr);
-    if (index < 0 || index >= static_cast<int>(values.size()) || !values[static_cast<std::size_t>(index)].ok) {
+    if (index < 0 || index >= static_cast<int>(values.size()) ||
+        !values[static_cast<std::size_t>(index)].ok) {
         return 0;
     }
     return values[static_cast<std::size_t>(index)].value;
@@ -2498,8 +2667,8 @@ bool WorkspaceWindow::exportMeasureReport(const QString& path, QString* error) {
         }
         return false;
     }
-    const medforge::geometry::MeasureReportContext context{
-        volume_.seriesInstanceUid, volume_.geometry.geometry.spacingMm};
+    const medforge::geometry::MeasureReportContext context{volume_.seriesInstanceUid,
+                                                           volume_.geometry.geometry.spacingMm};
     const medforge::geometry::TriangleMesh* mesh = hasSurface_ ? &surfaceMesh_ : nullptr;
     QFile textFile(path);
     if (!textFile.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
@@ -2528,8 +2697,8 @@ bool WorkspaceWindow::saveMeasures(const QString& path, QString* error) {
         return false;
     }
     std::string message;
-    if (!medforge::geometry::saveMeasureDocument(measures_, volume_.seriesInstanceUid,
-                                                 path.toStdString(), &message)) {
+    if (!medforge::geometry::saveMeasureDocument(
+            measures_, volume_.seriesInstanceUid, path.toStdString(), &message)) {
         if (error != nullptr) {
             *error = QString::fromStdString(message);
         }
@@ -2568,6 +2737,187 @@ bool WorkspaceWindow::loadMeasures(const QString& path, QString* error) {
     return true;
 }
 
+bool WorkspaceWindow::saveProject(const QString& path, QString* error) {
+    const auto fail = [this, error](const QString& message) {
+        if (error != nullptr) {
+            *error = message;
+        }
+        errorBanner_->setMessage(Banner::Severity::Error, message);
+        errorBanner_->setVisible(true);
+        return false;
+    };
+    if (!hasVolume_ || seriesFolder_.empty()) {
+        return fail(QStringLiteral("Import a CT series before saving a project."));
+    }
+    if (!windowWidth_->isValid() || !windowCenter_->isValid() || !isoThreshold_->isValid()) {
+        return fail(QStringLiteral("A project value is out of range."));
+    }
+    medforge::core::ProjectDocument document;
+    document.seriesInstanceUid = volume_.seriesInstanceUid;
+    document.seriesFolder = medforge::core::portableSeriesFolder(folderPath(path), seriesFolder_);
+    document.columns = volume_.columns;
+    document.rows = volume_.rows;
+    document.slices = volume_.slices;
+    document.checksum = medforge::core::contentFingerprint(volume_.seriesInstanceUid,
+                                                           volume_.columns,
+                                                           volume_.rows,
+                                                           volume_.slices,
+                                                           volume_.hu.data(),
+                                                           volume_.hu.size());
+    if (document.checksum == 0) {
+        return fail(QStringLiteral("Could not fingerprint the CT series."));
+    }
+    document.windowWidth = windowWidth_->value();
+    document.windowCenter = windowCenter_->value();
+    document.crosshairI = crosshair_.i;
+    document.crosshairJ = crosshair_.j;
+    document.crosshairK = crosshair_.k;
+    document.isoThreshold = isoThreshold_->value();
+    document.hasImplant = !implant_.isNull();
+    document.implantL = implantL_->value();
+    document.implantP = implantP_->value();
+    document.implantS = implantS_->value();
+    document.implantRx = implantRx_->value();
+    document.implantRy = implantRy_->value();
+    document.implantRz = implantRz_->value();
+    document.clearanceTolerance = clearanceTolerance_->value();
+    document.guideOffset = guideOffset_->value();
+    document.guideHole = guideHole_->value();
+    document.guideApplied = !guide_.isNull();
+    document.researchNotice = medforge::core::kResearchNotice;
+
+    const std::filesystem::path file = folderPath(path);
+    QString sidecarError;
+    if (!saveMask(pathToQString(medforge::core::projectSidecar(file, ".mfmask")), &sidecarError)) {
+        return fail(sidecarError);
+    }
+    if (!saveMeasures(pathToQString(medforge::core::projectSidecar(file, ".mfmeasure")),
+                      &sidecarError)) {
+        return fail(sidecarError);
+    }
+    std::string message;
+    if (!medforge::core::saveProject(file, document, &message)) {
+        return fail(QString::fromStdString(message));
+    }
+    errorBanner_->setMessage(Banner::Severity::Notice,
+                             QStringLiteral("Project saved. Not for clinical use."));
+    errorBanner_->setVisible(true);
+    if (error != nullptr) {
+        error->clear();
+    }
+    return true;
+}
+
+bool WorkspaceWindow::openProject(const QString& path, QString* error) {
+    const auto fail = [this, error](const QString& message) {
+        if (error != nullptr) {
+            *error = message;
+        }
+        errorBanner_->setMessage(Banner::Severity::Error, message);
+        errorBanner_->setVisible(true);
+        return false;
+    };
+    if (actions_->phase() == WorkspaceActions::Phase::Importing || importThread_.joinable()) {
+        return fail(QStringLiteral("An import is already running."));
+    }
+    const std::filesystem::path file = folderPath(path);
+    const medforge::core::ProjectLoad loaded = medforge::core::loadProject(file);
+    if (loaded.status != medforge::core::ProjectStatus::Ok) {
+        const std::string message =
+            loaded.message.empty() ? "Could not read the project." : loaded.message;
+        return fail(QString::fromStdString(message));
+    }
+    const std::filesystem::path series =
+        medforge::core::resolveSeriesFolder(file, loaded.document.seriesFolder);
+    std::error_code ec;
+    if (!std::filesystem::is_directory(series, ec)) {
+        return fail(QStringLiteral("The project series folder is missing."));
+    }
+    importFolder(pathToQString(series));
+    if (actions_->phase() != WorkspaceActions::Phase::Importing) {
+        return fail(QStringLiteral("Could not import the project series."));
+    }
+    pendingProject_ = loaded.document;
+    pendingProjectFile_ = file;
+    restoreProject_ = true;
+    if (error != nullptr) {
+        error->clear();
+    }
+    return true;
+}
+
+void WorkspaceWindow::restoreOpenedProject() {
+    if (!restoreProject_ || !hasVolume_) {
+        restoreProject_ = false;
+        return;
+    }
+    const medforge::core::ProjectDocument document = pendingProject_;
+    const std::filesystem::path file = pendingProjectFile_;
+    restoreProject_ = false;
+    if (!medforge::core::fingerprintMatches(document,
+                                            volume_.seriesInstanceUid,
+                                            volume_.columns,
+                                            volume_.rows,
+                                            volume_.slices,
+                                            volume_.hu.data(),
+                                            volume_.hu.size())) {
+        clearLoadedSeries();
+        const QString message = QStringLiteral("Project checksum does not match the CT series.");
+        actions_->reportError(message);
+        errorBanner_->setMessage(Banner::Severity::Error, message);
+        errorBanner_->setVisible(true);
+        return;
+    }
+    updatingWindowLevel_ = true;
+    windowWidth_->setValue(document.windowWidth);
+    windowCenter_->setValue(document.windowCenter);
+    updatingWindowLevel_ = false;
+    windowLevel_.widthHu = document.windowWidth;
+    windowLevel_.centerHu = document.windowCenter;
+    crosshair_.i = static_cast<int>(std::lround(document.crosshairI));
+    crosshair_.j = static_cast<int>(std::lround(document.crosshairJ));
+    crosshair_.k = static_cast<int>(std::lround(document.crosshairK));
+    isoThreshold_->setValue(document.isoThreshold);
+    clearanceTolerance_->setValue(document.clearanceTolerance);
+    guideOffset_->setValue(document.guideOffset);
+    guideHole_->setValue(document.guideHole);
+
+    QString sidecarError;
+    const std::filesystem::path mask = medforge::core::projectSidecar(file, ".mfmask");
+    if (std::filesystem::exists(mask) && !loadMask(pathToQString(mask), &sidecarError)) {
+        errorBanner_->setMessage(Banner::Severity::Error, sidecarError);
+        errorBanner_->setVisible(true);
+        return;
+    }
+    const std::filesystem::path measures = medforge::core::projectSidecar(file, ".mfmeasure");
+    if (std::filesystem::exists(measures) &&
+        !loadMeasures(pathToQString(measures), &sidecarError)) {
+        errorBanner_->setMessage(Banner::Severity::Error, sidecarError);
+        errorBanner_->setVisible(true);
+        return;
+    }
+    refreshMpr();
+    if (document.hasImplant && placeCylinderImplant()) {
+        updatingPose_ = true;
+        implantL_->setValue(document.implantL);
+        implantP_->setValue(document.implantP);
+        implantS_->setValue(document.implantS);
+        implantRx_->setValue(document.implantRx);
+        implantRy_->setValue(document.implantRy);
+        implantRz_->setValue(document.implantRz);
+        updatingPose_ = false;
+        applyImplantPose();
+    }
+    if (document.guideApplied && previewGuide()) {
+        applyGuide();
+    }
+    if (!errorBanner_->message().contains(QStringLiteral("intersects the anatomy"))) {
+        errorBanner_->setMessage(Banner::Severity::Notice,
+                                 QStringLiteral("Project opened. Not for clinical use."));
+        errorBanner_->setVisible(true);
+    }
+}
+
 bool WorkspaceWindow::anatomyBounds(medforge::core::Vec3* minimum,
                                     medforge::core::Vec3* maximum) const {
     if (!hasVolume_ || minimum == nullptr || maximum == nullptr || volume_.columns < 2 ||
@@ -2578,9 +2928,10 @@ bool WorkspaceWindow::anatomyBounds(medforge::core::Vec3* minimum,
     for (const int i : {0, volume_.columns - 1}) {
         for (const int j : {0, volume_.rows - 1}) {
             for (const int k : {0, volume_.slices - 1}) {
-                const medforge::core::CoordinateResult point = medforge::core::voxelIndexToPatientLps(
-                    {static_cast<double>(i), static_cast<double>(j), static_cast<double>(k)},
-                    volume_.geometry.geometry);
+                const medforge::core::CoordinateResult point =
+                    medforge::core::voxelIndexToPatientLps(
+                        {static_cast<double>(i), static_cast<double>(j), static_cast<double>(k)},
+                        volume_.geometry.geometry);
                 if (!point.ok()) {
                     return false;
                 }
@@ -2635,12 +2986,13 @@ void WorkspaceWindow::refreshCad() {
     const bool overlapPossible = !implant_.isNull() && !anatomy_.isNull() &&
                                  clearanceTolerance_ != nullptr && clearanceTolerance_->isValid();
     bool overlap = false;
-    QString status = implant_.isNull() ? QStringLiteral("No implant")
-                                       : QStringLiteral("Implant volume %1 mm³")
-                                             .arg(implant_.volumeMm3(), 0, 'f', 1);
+    QString status =
+        implant_.isNull()
+            ? QStringLiteral("No implant")
+            : QStringLiteral("Implant volume %1 mm³").arg(implant_.volumeMm3(), 0, 'f', 1);
     if (overlapPossible) {
-        const medforge::cad::Clearance clearance = medforge::cad::measureClearance(
-            implant_, anatomy_, clearanceTolerance_->value());
+        const medforge::cad::Clearance clearance =
+            medforge::cad::measureClearance(implant_, anatomy_, clearanceTolerance_->value());
         if (clearance.ok) {
             overlap = clearance.overlap;
             status = QStringLiteral("%1 mm. Tolerance %2 mm. %3. BRepExtrema.")
@@ -2653,7 +3005,8 @@ void WorkspaceWindow::refreshCad() {
             if (overlap) {
                 errorBanner_->setMessage(
                     Banner::Severity::Warning,
-                    QStringLiteral("Implant intersects the anatomy bounds. Clearance is approximate."));
+                    QStringLiteral(
+                        "Implant intersects the anatomy bounds. Clearance is approximate."));
                 errorBanner_->setVisible(true);
             } else if (errorBanner_->message().contains(QStringLiteral("intersects the anatomy"))) {
                 errorBanner_->setVisible(false);
@@ -2669,16 +3022,19 @@ void WorkspaceWindow::refreshCad() {
         return;
     }
     const medforge::cad::Shape& shownGuide = guidePreviewActive_ ? guidePreviewShape_ : guide_;
-    volumeViewport_->setCadOverlay(implant_.mesh(), shownGuide.mesh(), implantPose_.translationMm,
-                                   !implant_.isNull(), overlap);
+    volumeViewport_->setCadOverlay(implant_.mesh(),
+                                   shownGuide.mesh(),
+                                   implantPose_.translationMm,
+                                   !implant_.isNull(),
+                                   overlap);
 }
 
 void WorkspaceWindow::applyImplantPose() {
     if (updatingPose_ || implantBase_.isNull() || implantL_ == nullptr) {
         return;
     }
-    const NumericEditor* editors[] = {implantL_, implantP_, implantS_, implantRx_, implantRy_,
-                                      implantRz_};
+    const NumericEditor* editors[] = {
+        implantL_, implantP_, implantS_, implantRx_, implantRy_, implantRz_};
     for (const NumericEditor* editor : editors) {
         if (editor == nullptr || !editor->isValid()) {
             return;
@@ -2714,7 +3070,8 @@ bool WorkspaceWindow::placeCylinderImplant() {
         return false;
     }
     std::string error;
-    const medforge::core::Vec3 size{anatomyMax_.x - anatomyMin_.x, anatomyMax_.y - anatomyMin_.y,
+    const medforge::core::Vec3 size{anatomyMax_.x - anatomyMin_.x,
+                                    anatomyMax_.y - anatomyMin_.y,
                                     anatomyMax_.z - anatomyMin_.z};
     anatomy_ = medforge::cad::makeBox(anatomyMin_, size, &error);
     implantBase_ = medforge::cad::makeCylinder({0, 0, 0}, {0, 0, 1}, 1.5, 8, &error);
@@ -2759,7 +3116,8 @@ bool WorkspaceWindow::importImplantStep(const QString& path, QString* error) {
         return false;
     }
     const QString lower = path.toLower();
-    const bool iges = lower.endsWith(QStringLiteral(".igs")) || lower.endsWith(QStringLiteral(".iges"));
+    const bool iges =
+        lower.endsWith(QStringLiteral(".igs")) || lower.endsWith(QStringLiteral(".iges"));
     std::string local;
     medforge::cad::Shape loaded = iges ? medforge::cad::readIges(path.toStdString(), &local)
                                        : medforge::cad::readStep(path.toStdString(), &local);
@@ -2770,7 +3128,8 @@ bool WorkspaceWindow::importImplantStep(const QString& path, QString* error) {
         return false;
     }
     if (anatomy_.isNull()) {
-        const medforge::core::Vec3 size{anatomyMax_.x - anatomyMin_.x, anatomyMax_.y - anatomyMin_.y,
+        const medforge::core::Vec3 size{anatomyMax_.x - anatomyMin_.x,
+                                        anatomyMax_.y - anatomyMin_.y,
                                         anatomyMax_.z - anatomyMin_.z};
         anatomy_ = medforge::cad::makeBox(anatomyMin_, size, &local);
         if (anatomy_.isNull()) {
@@ -2801,7 +3160,8 @@ bool WorkspaceWindow::importImplantStep(const QString& path, QString* error) {
     }
     errorBanner_->setMessage(
         Banner::Severity::Notice,
-        QStringLiteral("Imported implant. Research prototype. Not for manufacture or clinical use."));
+        QStringLiteral(
+            "Imported implant. Research prototype. Not for manufacture or clinical use."));
     errorBanner_->setVisible(true);
     return true;
 }
@@ -2843,7 +3203,8 @@ bool WorkspaceWindow::previewGuide() {
     }
     if (anatomy_.isNull()) {
         std::string error;
-        const medforge::core::Vec3 size{anatomyMax_.x - anatomyMin_.x, anatomyMax_.y - anatomyMin_.y,
+        const medforge::core::Vec3 size{anatomyMax_.x - anatomyMin_.x,
+                                        anatomyMax_.y - anatomyMin_.y,
                                         anatomyMax_.z - anatomyMin_.z};
         anatomy_ = medforge::cad::makeBox(anatomyMin_, size, &error);
         if (anatomy_.isNull()) {
@@ -2946,20 +3307,22 @@ bool WorkspaceWindow::exportPrototype(const QString& path, QString* error) {
         }
         errorBanner_->setMessage(
             Banner::Severity::Success,
-            QStringLiteral("Exported STEP. Research prototype. Not for manufacture or clinical use."));
+            QStringLiteral(
+                "Exported STEP. Research prototype. Not for manufacture or clinical use."));
         errorBanner_->setVisible(true);
         return true;
     }
     if (!hasSurface_ || surfaceMesh_.indices.size() < 3) {
         if (error != nullptr) {
-            *error = QStringLiteral("Place an implant or build a surface before exporting a prototype");
+            *error =
+                QStringLiteral("Place an implant or build a surface before exporting a prototype");
         }
         return false;
     }
     std::string local;
     const char* header = "MedForge STL millimeters. Research prototype. Not for manufacture.";
-    if (!medforge::geometry::writeBinaryStl(surfaceMesh_, std::filesystem::path(path.toStdString()),
-                                            &local, header)) {
+    if (!medforge::geometry::writeBinaryStl(
+            surfaceMesh_, std::filesystem::path(path.toStdString()), &local, header)) {
         if (error != nullptr) {
             *error = QString::fromStdString(local);
         }
@@ -2967,8 +3330,9 @@ bool WorkspaceWindow::exportPrototype(const QString& path, QString* error) {
     }
     errorBanner_->setMessage(
         Banner::Severity::Warning,
-        QStringLiteral("Exported STL because this mesh is not a valid B-Rep. A triangle mesh is not "
-                       "an exact STEP. Not for manufacture or clinical use."));
+        QStringLiteral(
+            "Exported STL because this mesh is not a valid B-Rep. A triangle mesh is not "
+            "an exact STEP. Not for manufacture or clinical use."));
     errorBanner_->setVisible(true);
     return true;
 }
