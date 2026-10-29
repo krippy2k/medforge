@@ -396,6 +396,110 @@ bool saveVolumeStates(const QString& directory,
     return true;
 }
 
+void revealMeshControls(WorkspaceWindow& window) {
+    auto* scroll = window.findChild<QScrollArea*>(QStringLiteral("propertiesScroll"));
+    auto* anchor = window.findChild<QWidget*>(QStringLiteral("meshDiagnostics"));
+    if (scroll == nullptr || anchor == nullptr || scroll->widget() == nullptr) {
+        return;
+    }
+    const QPoint top = anchor->mapTo(scroll->widget(), QPoint(0, 0));
+    scroll->verticalScrollBar()->setValue(top.y());
+}
+
+bool prepareMeshCapture(WorkspaceWindow& window, QString* error) {
+    window.importFolder(pathString(std::filesystem::temp_directory_path() / "medforge-m6-capture-phantom"));
+    if (!waitForPhase(window, WorkspaceActions::Phase::Study, 5000)) {
+        if (error != nullptr) {
+            *error = QStringLiteral("Mesh capture import did not finish.");
+        }
+        return false;
+    }
+    auto* threshold = window.findChild<NumericEditor*>(QStringLiteral("isoThreshold"));
+    if (threshold == nullptr) {
+        if (error != nullptr) {
+            *error = QStringLiteral("Threshold control is missing.");
+        }
+        return false;
+    }
+    threshold->setValue(0);
+    window.buildSurface();
+    if (!waitUntil(5000, [&window] { return window.committedTriangleCount() > 0; })) {
+        if (error != nullptr) {
+            *error = QStringLiteral("Mesh capture surface did not finish.");
+        }
+        return false;
+    }
+    return true;
+}
+
+bool saveMeshRepairStates(const QString& directory,
+                          int percent,
+                          QString* error,
+                          QTextStream& manifest) {
+    const std::filesystem::path phantom =
+        std::filesystem::temp_directory_path() / "medforge-m6-capture-phantom";
+    std::string phantomError;
+    if (!medforge::imaging::phantom::writeSyntheticAxialSeries(phantom, &phantomError)) {
+        if (error != nullptr) {
+            *error = QString::fromStdString(phantomError);
+        }
+        return false;
+    }
+    const QString layout = QDir::temp().filePath(QStringLiteral("medforge-m6-capture-layout.ini"));
+    const QList<QSize> sizes = {QSize(1280, 800), QSize(1920, 1080), QSize(2560, 1440)};
+    for (const QSize& size : sizes) {
+        WorkspaceWindow inspected(layout);
+        if (!prepareMeshCapture(inspected, error)) {
+            return false;
+        }
+        const QString name = QStringLiteral("mesh-diagnostics-%1x%2-scale%3.png")
+                                 .arg(size.width())
+                                 .arg(size.height())
+                                 .arg(percent);
+        if (!saveWidget(inspected, size, QDir(directory).filePath(name), error, manifest,
+                        [&inspected] { revealMeshControls(inspected); })) {
+            return false;
+        }
+        inspected.close();
+    }
+    WorkspaceWindow preview(layout);
+    if (!prepareMeshCapture(preview, error)) {
+        return false;
+    }
+    preview.previewMeshRepair();
+    if (!waitUntil(5000, [&preview] { return preview.meshPreviewActive(); })) {
+        if (error != nullptr) {
+            *error = QStringLiteral("Mesh preview did not finish.");
+        }
+        return false;
+    }
+    if (!saveWidget(preview, QSize(1280, 800),
+                    QDir(directory).filePath(QStringLiteral("mesh-preview-1280x800-scale%1.png").arg(percent)),
+                    error, manifest, [&preview] { revealMeshControls(preview); })) {
+        return false;
+    }
+    preview.close();
+    WorkspaceWindow exported(layout);
+    if (!prepareMeshCapture(exported, error)) {
+        return false;
+    }
+    QString exportError;
+    if (!exported.exportBinaryStl(QDir::temp().filePath(QStringLiteral("medforge-m6-capture.stl")),
+                                  &exportError)) {
+        if (error != nullptr) {
+            *error = exportError;
+        }
+        return false;
+    }
+    if (!saveWidget(exported, QSize(1280, 800),
+                    QDir(directory).filePath(QStringLiteral("mesh-export-1280x800-scale%1.png").arg(percent)),
+                    error, manifest, [&exported] { revealMeshControls(exported); })) {
+        return false;
+    }
+    exported.close();
+    return true;
+}
+
 void revealMeasureControls(WorkspaceWindow& window) {
     auto* scroll = window.findChild<QScrollArea*>(QStringLiteral("propertiesScroll"));
     auto* anchor = window.findChild<QWidget*>(QStringLiteral("measureNotice"));
@@ -673,7 +777,8 @@ bool captureUiEvidence(const QString& directory, QString* error) {
     return saveMprStates(directory, percent, error, manifest) &&
            saveVolumeStates(directory, percent, error, manifest) &&
            saveSegmentStates(directory, percent, error, manifest) &&
-           saveMeasureStates(directory, percent, error, manifest);
+           saveMeasureStates(directory, percent, error, manifest) &&
+           saveMeshRepairStates(directory, percent, error, manifest);
 }
 
 } // namespace medforge::ui

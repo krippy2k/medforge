@@ -2,7 +2,7 @@
 
 A greenfield C++20/Qt 6 desktop application for CT visualization, segmentation, mesh processing, anatomical measurements, and experimental CAD planning. **Research and demonstration only; not for clinical use.**
 
-M0 establishes the build, module boundaries, design tokens, and developer component gallery. M2 reads uncompressed CT into linked MPR views. M3 adds volume ray casting and an isosurface. M4 adds labeled voxel masks. M5 places landmarks and reports distances, angles, and cross-section areas. Mesh file export is a later milestone.
+M0 establishes the build, module boundaries, design tokens, and developer component gallery. M2 reads uncompressed CT into linked MPR views. M3 adds volume ray casting and an isosurface. M4 adds labeled voxel masks. M5 places landmarks and reports distances, angles, and cross-section areas. M6 inspects a mesh, previews smoothing, decimation, and small-hole fill, and exports binary STL in millimeters. STEP is a later milestone.
 
 ## Milestone sequence
 M0 Foundation → M1 Desktop shell → M2 DICOM/MPR → M3 Volume/mesh → M4 Segmentation → M5 Measurements → M6 Mesh repair/export → M7 Guide/implant planning → M8 Validation/release.
@@ -15,7 +15,7 @@ Dependency direction is one-way:
 `core` ← `imaging`, `geometry` ← `cad`, `core` ← `rendering`, `core` ← `ui` ← `apps/desktop`
 
 - `core` has no Qt dependency. It owns LPS millimeter conversion, entity ids, cancellation tokens, command history, and the synthetic volume fixture.
-- `imaging` reads uncompressed CT and owns labeled voxel masks. `geometry` stores landmark definitions and computes distances, angles, and section areas without Qt or VTK. `rendering` uses VTK 9.4.2 for volume ray casting and Flying Edges when that package is present. CAD kernels are a later milestone.
+- `imaging` reads uncompressed CT and owns labeled voxel masks. `geometry` stores landmarks and mesh repair without Qt or VTK: distances, angles, section areas, topology, smoothing, decimation, small-hole fill, and binary STL. `rendering` uses VTK 9.4.2 for volume ray casting and Flying Edges when that package is present. CAD kernels are a later milestone.
 - `ui` owns tokens, the generated stylesheet, shared widgets, the component gallery, and the M1 layout reference.
 - Patient coordinates are LPS millimeters. Voxel conversion is `origin + direction × (index ∘ spacing)`. Spacing must be positive and the direction matrix must be invertible.
 
@@ -60,10 +60,10 @@ The desktop executable is `build/<preset>/bin/medforge` (`.exe` on Windows). Vis
 ```text
 medforge --gallery
 medforge --reference
-medforge --capture docs/ui/evidence/M5
+medforge --capture docs/ui/evidence/M6
 ```
 
-Screenshot steps are in `docs/ui/screenshot-workflow.md`. The current demo script is `docs/M5-demo.md`.
+Screenshot steps are in `docs/ui/screenshot-workflow.md`. The current demo script is `docs/M6-demo.md`.
 
 Generate the checked-in synthetic sphere fixture with:
 
@@ -77,7 +77,7 @@ The fixture is synthetic. It is not patient data.
 Tokens live in code and are written into the Qt stylesheet. The approved M1 wireframe is `docs/ui/reference/m1-main-window-1920x1080.png` (with 1280×800 and 2560×1440 siblings). M1 should reuse these tokens and components.
 
 ## Limitations
-- M5 reports a distance in millimeters, a three-point angle in degrees, and a plane cut of the current surface in mm². The saved measurement file stores definitions, not the derived numbers. Mesh file export is a later milestone. Morphology is not included.
+- M6 reports bounds, area, volume when the mesh is watertight, component count, and open or non-manifold edges. Smoothing, decimation, and small-hole fill are previews until Apply repair. A hole above the edge limit is refused. Binary STL is millimeters and is checked by reading it back. STEP, OBJ, and PLY are not written. Morphology is not included.
 - Offscreen capture draws a software preview of the volume bounds and the mesh. GPU ray-cast pixels are not part of that capture.
 - Compressed DICOM transfer syntaxes and enhanced multi-frame CT are recognized and rejected.
 - The gallery sample task is a cancellable progress demonstration, not an imaging operation.

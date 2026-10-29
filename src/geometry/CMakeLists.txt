@@ -2,6 +2,7 @@ add_library(medforge_geometry STATIC
     src/Module.cpp
     src/Surface.cpp
     src/Measure.cpp
+    src/MeshProcess.cpp
 )
 add_library(medforge::geometry ALIAS medforge_geometry)
 target_include_directories(medforge_geometry PUBLIC include)

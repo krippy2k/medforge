@@ -2,6 +2,7 @@
 
 #include "medforge/core/CommandHistory.h"
 #include "medforge/geometry/Measure.h"
+#include "medforge/geometry/MeshProcess.h"
 #include "medforge/geometry/Surface.h"
 #include "medforge/imaging/CtImport.h"
 #include "medforge/imaging/LabelMap.h"
@@ -82,6 +83,16 @@ public:
     bool exportMeasureReport(const QString& path, QString* error);
     bool saveMeasures(const QString& path, QString* error);
     bool loadMeasures(const QString& path, QString* error);
+    void previewMeshRepair(int delayBeforeMs = 0);
+    void applyMeshPreview();
+    void cancelMeshPreview();
+    void cancelMeshOperation();
+    void undoMesh();
+    void redoMesh();
+    bool exportBinaryStl(const QString& path, QString* error);
+    bool meshPreviewActive() const;
+    int committedTriangleCount() const;
+    QString meshDiagnostics() const;
     bool segmentUnsaved() const;
     int labelAt(int i, int j, int k) const;
 
@@ -112,6 +123,9 @@ private:
     void commitMeasures(medforge::geometry::MeasureDocument next);
     void refreshMeasures();
     void resetMeasures();
+    void resetMeshEdits();
+    void shutdownMeshEdit();
+    void applyMeshEditResult(int generation, medforge::geometry::MeshEditResult result);
     void updateMeasureOverlays();
     int nearestLandmark() const;
     void saveSegmentTools();
@@ -154,6 +168,17 @@ private:
     QPushButton* buildSurfaceButton_ = nullptr;
     NumericEditor* isoThreshold_ = nullptr;
     QLabel* meshStats_ = nullptr;
+    QLabel* meshDiagnostics_ = nullptr;
+    SegmentedControl* meshRepair_ = nullptr;
+    NumericEditor* smoothIterations_ = nullptr;
+    NumericEditor* decimateKeep_ = nullptr;
+    NumericEditor* holeEdges_ = nullptr;
+    std::thread meshEditThread_;
+    medforge::core::CancellationSource meshEditCancel_;
+    int meshEditGeneration_ = 0;
+    medforge::geometry::TriangleMesh meshPreview_;
+    bool meshPreviewActive_ = false;
+    medforge::core::CommandHistory meshHistory_;
     BrowserRow* surfaceRow_ = nullptr;
     BrowserRow* segmentRow_ = nullptr;
     SegmentedControl* segmentTool_ = nullptr;

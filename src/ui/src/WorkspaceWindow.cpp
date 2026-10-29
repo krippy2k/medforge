@@ -13,6 +13,9 @@
 #include "medforge/ui/VolumeViewport.h"
 #include "medforge/ui/WorkspaceActions.h"
 
+#include <chrono>
+#include <cmath>
+
 #include <QAction>
 #include <QCheckBox>
 #include <QCloseEvent>
@@ -85,6 +88,40 @@ private:
     bool applied_ = false;
 };
 
+class MeshEditCommand : public medforge::core::Command {
+public:
+    MeshEditCommand(medforge::geometry::TriangleMesh* target,
+                    medforge::geometry::TriangleMesh before,
+                    medforge::geometry::TriangleMesh after)
+        : target_(target), before_(std::move(before)), after_(std::move(after)) {}
+
+    const char* name() const override { return "mesh"; }
+
+    bool execute() override {
+        if (applied_ || target_ == nullptr) {
+            return false;
+        }
+        *target_ = after_;
+        applied_ = true;
+        return true;
+    }
+
+    bool undo() override {
+        if (target_ == nullptr) {
+            return false;
+        }
+        *target_ = before_;
+        applied_ = false;
+        return true;
+    }
+
+private:
+    medforge::geometry::TriangleMesh* target_ = nullptr;
+    medforge::geometry::TriangleMesh before_;
+    medforge::geometry::TriangleMesh after_;
+    bool applied_ = false;
+};
+
 std::filesystem::path folderPath(const QString& folder) {
 #ifdef Q_OS_WIN
     return std::filesystem::path(folder.toStdWString());
@@ -130,6 +167,7 @@ WorkspaceWindow::WorkspaceWindow(const QString& layoutFile, QWidget* parent)
 
 WorkspaceWindow::~WorkspaceWindow() {
     shutdownSegment();
+    shutdownMeshEdit();
     shutdownSurface();
     shutdownImport();
 }
@@ -228,6 +266,7 @@ void WorkspaceWindow::showSample() {
 }
 
 void WorkspaceWindow::closeEvent(QCloseEvent* event) {
+    shutdownMeshEdit();
     shutdownSurface();
     shutdownImport();
     saveLayout();
@@ -316,6 +355,20 @@ void WorkspaceWindow::buildMenus() {
         }
         QString error;
         if (!exportMeasureReport(path, &error)) {
+            errorBanner_->setMessage(Banner::Severity::Error, error);
+            errorBanner_->setVisible(true);
+        }
+    });
+    auto* exportStlAction = fileMenu->addAction(QStringLiteral("Export &STL..."));
+    exportStlAction->setObjectName(QStringLiteral("exportStlAction"));
+    connect(exportStlAction, &QAction::triggered, this, [this] {
+        const QString path = QFileDialog::getSaveFileName(
+            this, QStringLiteral("Export binary STL"), QString(), QStringLiteral("Binary STL (*.stl)"));
+        if (path.isEmpty()) {
+            return;
+        }
+        QString error;
+        if (!exportBinaryStl(path, &error)) {
             errorBanner_->setMessage(Banner::Severity::Error, error);
             errorBanner_->setVisible(true);
         }
@@ -504,6 +557,50 @@ void WorkspaceWindow::buildDocks() {
     meshStats_->setObjectName(QStringLiteral("meshStats"));
     meshStats_->setWordWrap(true);
     meshStats_->setProperty("mfRole", QStringLiteral("secondary"));
+    meshDiagnostics_ = new QLabel(QStringLiteral("No surface"), ctProperties_);
+    meshDiagnostics_->setObjectName(QStringLiteral("meshDiagnostics"));
+    meshDiagnostics_->setWordWrap(true);
+    meshDiagnostics_->setProperty("mfRole", QStringLiteral("secondary"));
+    meshRepair_ = new SegmentedControl(
+        {QStringLiteral("Smooth"), QStringLiteral("Decimate"), QStringLiteral("Fill holes")},
+        ctProperties_);
+    meshRepair_->setObjectName(QStringLiteral("meshRepair"));
+    meshRepair_->setToolTip(QStringLiteral("Mesh repair. Preview does not replace the source."));
+    smoothIterations_ = new NumericEditor(ctProperties_);
+    smoothIterations_->setObjectName(QStringLiteral("smoothIterations"));
+    smoothIterations_->setLabel(QStringLiteral("Iterations"));
+    smoothIterations_->setDecimals(0);
+    smoothIterations_->setRange(1, 50);
+    smoothIterations_->setValue(1);
+    decimateKeep_ = new NumericEditor(ctProperties_);
+    decimateKeep_->setObjectName(QStringLiteral("decimateKeep"));
+    decimateKeep_->setLabel(QStringLiteral("Keep"));
+    decimateKeep_->setUnit(QStringLiteral("%"));
+    decimateKeep_->setDecimals(0);
+    decimateKeep_->setRange(5, 100);
+    decimateKeep_->setValue(50);
+    holeEdges_ = new NumericEditor(ctProperties_);
+    holeEdges_->setObjectName(QStringLiteral("holeEdges"));
+    holeEdges_->setLabel(QStringLiteral("Hole"));
+    holeEdges_->setUnit(QStringLiteral("edges"));
+    holeEdges_->setDecimals(0);
+    holeEdges_->setRange(3, 64);
+    holeEdges_->setValue(12);
+    auto* previewMeshButton = new QPushButton(QStringLiteral("Preview repair"), ctProperties_);
+    previewMeshButton->setObjectName(QStringLiteral("previewMesh"));
+    auto* applyMeshButton = new QPushButton(QStringLiteral("Apply repair"), ctProperties_);
+    applyMeshButton->setObjectName(QStringLiteral("applyMesh"));
+    auto* cancelPreviewButton = new QPushButton(QStringLiteral("Cancel preview"), ctProperties_);
+    cancelPreviewButton->setObjectName(QStringLiteral("cancelMeshPreview"));
+    auto* undoMeshButton = new QPushButton(QStringLiteral("Undo mesh"), ctProperties_);
+    undoMeshButton->setObjectName(QStringLiteral("undoMesh"));
+    auto* redoMeshButton = new QPushButton(QStringLiteral("Redo mesh"), ctProperties_);
+    redoMeshButton->setObjectName(QStringLiteral("redoMesh"));
+    auto* repairNote = new QLabel(
+        QStringLiteral("Preview does not replace the source mesh. STL units are millimeters."),
+        ctProperties_);
+    repairNote->setWordWrap(true);
+    repairNote->setProperty("mfRole", QStringLiteral("secondary"));
     auto* volumeNote = new QLabel(
         QStringLiteral("Research volume preview. Not a clinical reconstruction."), ctProperties_);
     volumeNote->setWordWrap(true);
@@ -573,6 +670,17 @@ void WorkspaceWindow::buildDocks() {
     ctLayout->addWidget(buildSurfaceButton_);
     ctLayout->addWidget(cameraViews_);
     ctLayout->addWidget(meshStats_);
+    ctLayout->addWidget(meshDiagnostics_);
+    ctLayout->addWidget(repairNote);
+    ctLayout->addWidget(meshRepair_);
+    ctLayout->addWidget(smoothIterations_);
+    ctLayout->addWidget(decimateKeep_);
+    ctLayout->addWidget(holeEdges_);
+    ctLayout->addWidget(previewMeshButton);
+    ctLayout->addWidget(applyMeshButton);
+    ctLayout->addWidget(cancelPreviewButton);
+    ctLayout->addWidget(undoMeshButton);
+    ctLayout->addWidget(redoMeshButton);
     ctLayout->addWidget(volumeNote);
     ctLayout->addWidget(segmentNote);
     ctLayout->addWidget(segmentTool_);
@@ -721,6 +829,11 @@ void WorkspaceWindow::buildDocks() {
     });
     connect(clipButton_, &QPushButton::toggled, this, [this](bool) { refreshSurfaceView(); });
     connect(buildSurfaceButton_, &QPushButton::clicked, this, [this] { buildSurface(); });
+    connect(previewMeshButton, &QPushButton::clicked, this, [this] { previewMeshRepair(); });
+    connect(applyMeshButton, &QPushButton::clicked, this, &WorkspaceWindow::applyMeshPreview);
+    connect(cancelPreviewButton, &QPushButton::clicked, this, &WorkspaceWindow::cancelMeshPreview);
+    connect(undoMeshButton, &QPushButton::clicked, this, &WorkspaceWindow::undoMesh);
+    connect(redoMeshButton, &QPushButton::clicked, this, &WorkspaceWindow::redoMesh);
     connect(cameraViews_, &SegmentedControl::currentIndexChanged, this, [this](int index) {
         const medforge::rendering::AnatomicalView views[] = {
             medforge::rendering::AnatomicalView::Anterior,
@@ -991,25 +1104,34 @@ void WorkspaceWindow::refreshSurfaceView() {
     volumeViewport_->setClipPlane(clip, origin, normal);
     if (!hasSurface_) {
         meshStats_->setText(QStringLiteral("No surface"));
+        if (meshDiagnostics_ != nullptr) {
+            meshDiagnostics_->setText(QStringLiteral("No surface"));
+        }
         surfaceRow_->hide();
         volumeViewport_->clearMesh();
         refreshMeasures();
         return;
     }
+    const medforge::geometry::TriangleMesh& source =
+        meshPreviewActive_ ? meshPreview_ : surfaceMesh_;
     const medforge::geometry::TriangleMesh shown =
-        clip ? medforge::geometry::clipHalfSpace(surfaceMesh_, origin, normal) : surfaceMesh_;
+        clip ? medforge::geometry::clipHalfSpace(source, origin, normal) : source;
     if (meshVisibleButton_->isChecked()) {
         volumeViewport_->setMesh(shown);
     } else {
         volumeViewport_->clearMesh();
     }
     const medforge::geometry::MeshStatistics stats = medforge::geometry::measureMesh(shown);
-    meshStats_->setText(QStringLiteral("%1 triangles\nVolume %2 mm³\n%3 MB volume, %4 MB mesh\n%5 ms")
+    meshStats_->setText(QStringLiteral("%1%2 triangles\nVolume %3 mm³\n%4 MB volume, %5 MB mesh\n%6 ms")
+                            .arg(meshPreviewActive_ ? QStringLiteral("Preview ") : QString())
                             .arg(stats.triangleCount)
                             .arg(stats.volumeMm3, 0, 'f', 1)
                             .arg(static_cast<double>(surfaceResult_.volumeBytes) / 1.0e6, 0, 'f', 2)
                             .arg(static_cast<double>(surfaceResult_.meshBytes) / 1.0e6, 0, 'f', 2)
                             .arg(surfaceResult_.elapsedMs, 0, 'f', 0));
+    if (meshDiagnostics_ != nullptr) {
+        meshDiagnostics_->setText(meshDiagnostics());
+    }
     surfaceRow_->setCountText(QString::number(stats.triangleCount));
     surfaceRow_->show();
     refreshMeasures();
@@ -1035,6 +1157,7 @@ void WorkspaceWindow::applySurface(int generation, const medforge::rendering::Su
     if (result.status == medforge::rendering::SurfaceStatus::Empty) {
         hasSurface_ = false;
         surfaceMesh_ = {};
+        resetMeshEdits();
         refreshSurfaceView();
         errorBanner_->setMessage(Banner::Severity::Warning, QString::fromStdString(result.message));
         errorBanner_->setVisible(true);
@@ -1047,6 +1170,7 @@ void WorkspaceWindow::applySurface(int generation, const medforge::rendering::Su
     }
     hasSurface_ = true;
     surfaceMesh_ = result.mesh;
+    resetMeshEdits();
     refreshSurfaceView();
     if (errorBanner_->isVisible() && errorBanner_->message().contains(QStringLiteral("surface"),
                                                                       Qt::CaseInsensitive)) {
@@ -1104,6 +1228,7 @@ void WorkspaceWindow::importFolder(const QString& folder, int delayPerFileMs) {
         return;
     }
     shutdownSegment();
+    shutdownMeshEdit();
     shutdownSurface();
     closing_ = false;
     importCancel_ = medforge::core::CancellationSource();
@@ -1146,7 +1271,11 @@ void WorkspaceWindow::clearLoadedSeries() {
     hasSurface_ = false;
     surfaceMesh_ = {};
     surfaceResult_ = {};
+    resetMeshEdits();
     meshStats_->setText(QStringLiteral("No surface"));
+    if (meshDiagnostics_ != nullptr) {
+        meshDiagnostics_->setText(QStringLiteral("No surface"));
+    }
     surfaceRow_->hide();
     volumeViewport_->clearStudy();
     showVolumePane(false);
@@ -1199,7 +1328,11 @@ void WorkspaceWindow::applyImportResult(const medforge::imaging::ImportResult& r
     hasSurface_ = false;
     surfaceMesh_ = {};
     surfaceResult_ = {};
+    resetMeshEdits();
     meshStats_->setText(QStringLiteral("No surface"));
+    if (meshDiagnostics_ != nullptr) {
+        meshDiagnostics_->setText(QStringLiteral("No surface"));
+    }
     surfaceRow_->hide();
     labelMap_ = medforge::imaging::emptyLabelMap(volume_);
     resetMeasures();
@@ -1729,6 +1862,208 @@ bool WorkspaceWindow::segmentUnsaved() const {
 
 int WorkspaceWindow::labelAt(int i, int j, int k) const {
     return labelMap_.at(i, j, k);
+}
+
+void WorkspaceWindow::shutdownMeshEdit() {
+    ++meshEditGeneration_;
+    meshEditCancel_.cancel();
+    if (meshEditThread_.joinable()) {
+        meshEditThread_.join();
+    }
+}
+
+void WorkspaceWindow::resetMeshEdits() {
+    shutdownMeshEdit();
+    meshHistory_ = {};
+    meshPreviewActive_ = false;
+    meshPreview_ = {};
+}
+
+QString WorkspaceWindow::meshDiagnostics() const {
+    if (!hasSurface_) {
+        return QStringLiteral("No surface");
+    }
+    const medforge::geometry::MeshTopology topology = medforge::geometry::inspectMesh(surfaceMesh_);
+    QString text;
+    if (meshPreviewActive_) {
+        text += QStringLiteral("Preview — not applied\n");
+    }
+    text += topology.volumeValid ? QStringLiteral("Watertight\n") : QStringLiteral("Not watertight\n");
+    text += QStringLiteral("Area %1 mm²\n").arg(topology.surfaceAreaMm2, 0, 'f', 3);
+    text += topology.volumeValid ? QStringLiteral("Volume %1 mm³\n").arg(topology.volumeMm3, 0, 'f', 3)
+                                  : QStringLiteral("Volume unavailable\n");
+    text += QStringLiteral("%1 components, %2 open edges, %3 non-manifold edges\nSTL units: millimeters")
+                .arg(topology.componentCount)
+                .arg(topology.openEdgeCount)
+                .arg(topology.nonManifoldEdgeCount);
+    return text;
+}
+
+bool WorkspaceWindow::meshPreviewActive() const {
+    return meshPreviewActive_;
+}
+
+int WorkspaceWindow::committedTriangleCount() const {
+    return hasSurface_ ? static_cast<int>(surfaceMesh_.indices.size() / 3) : 0;
+}
+
+void WorkspaceWindow::previewMeshRepair(int delayBeforeMs) {
+    if (!hasSurface_ || meshEditThread_.joinable() || meshRepair_ == nullptr) {
+        return;
+    }
+    ++meshEditGeneration_;
+    const int generation = meshEditGeneration_;
+    meshEditCancel_ = medforge::core::CancellationSource();
+    const medforge::core::CancellationToken token = meshEditCancel_.token();
+    const medforge::geometry::TriangleMesh source = surfaceMesh_;
+    const int tool = meshRepair_->currentIndex();
+    const int iterations = static_cast<int>(smoothIterations_->value());
+    const double keep = decimateKeep_->value() / 100.0;
+    const int holes = static_cast<int>(holeEdges_->value());
+    taskIdleLabel_->setText(QStringLiteral("Repairing mesh"));
+    taskProgress_->setRunning(true);
+    taskProgress_->setPercent(0);
+    meshEditThread_ = std::thread([this, generation, source, token, tool, iterations, keep, holes,
+                                   delayBeforeMs] {
+        if (delayBeforeMs > 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(delayBeforeMs));
+        }
+        medforge::geometry::MeshEditResult result;
+        if (token.isCancelled()) {
+            result.cancelled = true;
+            result.message = "Mesh edit cancelled";
+            result.mesh = source;
+        } else if (tool == 1) {
+            result = medforge::geometry::decimateMesh(source, keep, token);
+        } else if (tool == 2) {
+            result = medforge::geometry::fillSmallHoles(source, holes, token);
+        } else {
+            result = medforge::geometry::smoothMesh(source, iterations, 0.5, token);
+        }
+        QMetaObject::invokeMethod(
+            this, [this, generation, result] { applyMeshEditResult(generation, result); },
+            Qt::QueuedConnection);
+    });
+}
+
+void WorkspaceWindow::applyMeshEditResult(int generation, medforge::geometry::MeshEditResult result) {
+    if (meshEditThread_.joinable()) {
+        meshEditThread_.join();
+    }
+    if (closing_ || generation != meshEditGeneration_) {
+        return;
+    }
+    taskProgress_->setRunning(false);
+    taskProgress_->setPercent(0);
+    taskIdleLabel_->setText(
+        QStringLiteral("No background task. Import and surface extraction run off the GUI thread."));
+    if (result.cancelled || !result.ok) {
+        meshPreviewActive_ = false;
+        meshPreview_ = {};
+        refreshSurfaceView();
+        errorBanner_->setMessage(result.cancelled ? Banner::Severity::Notice : Banner::Severity::Warning,
+                                 QString::fromStdString(result.message));
+        errorBanner_->setVisible(true);
+        return;
+    }
+    meshPreview_ = std::move(result.mesh);
+    meshPreviewActive_ = true;
+    refreshSurfaceView();
+    errorBanner_->hide();
+}
+
+void WorkspaceWindow::applyMeshPreview() {
+    if (!meshPreviewActive_ || !hasSurface_) {
+        return;
+    }
+    meshHistory_.execute(std::make_unique<MeshEditCommand>(&surfaceMesh_, surfaceMesh_, meshPreview_));
+    meshPreviewActive_ = false;
+    meshPreview_ = {};
+    refreshSurfaceView();
+    errorBanner_->setMessage(Banner::Severity::Notice, QStringLiteral("Mesh repair applied"));
+    errorBanner_->setVisible(true);
+}
+
+void WorkspaceWindow::cancelMeshPreview() {
+    if (!meshPreviewActive_) {
+        return;
+    }
+    meshPreviewActive_ = false;
+    meshPreview_ = {};
+    refreshSurfaceView();
+    errorBanner_->setMessage(Banner::Severity::Notice, QStringLiteral("Mesh preview discarded"));
+    errorBanner_->setVisible(true);
+}
+
+void WorkspaceWindow::cancelMeshOperation() {
+    meshEditCancel_.cancel();
+}
+
+void WorkspaceWindow::undoMesh() {
+    if (!meshHistory_.undo()) {
+        return;
+    }
+    meshPreviewActive_ = false;
+    meshPreview_ = {};
+    refreshSurfaceView();
+}
+
+void WorkspaceWindow::redoMesh() {
+    if (!meshHistory_.redo()) {
+        return;
+    }
+    meshPreviewActive_ = false;
+    meshPreview_ = {};
+    refreshSurfaceView();
+}
+
+bool WorkspaceWindow::exportBinaryStl(const QString& path, QString* error) {
+    if (!hasSurface_) {
+        if (error != nullptr) {
+            *error = QStringLiteral("Build a surface before exporting");
+        }
+        return false;
+    }
+    if (meshPreviewActive_) {
+        if (error != nullptr) {
+            *error = QStringLiteral("Apply or cancel the mesh preview before export");
+        }
+        return false;
+    }
+    std::string message;
+    const std::filesystem::path file = path.toStdString();
+    if (!medforge::geometry::writeBinaryStl(surfaceMesh_, file, &message)) {
+        if (error != nullptr) {
+            *error = QString::fromStdString(message);
+        }
+        return false;
+    }
+    medforge::geometry::TriangleMesh loaded;
+    if (!medforge::geometry::readBinaryStl(file, &loaded, &message)) {
+        if (error != nullptr) {
+            *error = QString::fromStdString(message);
+        }
+        return false;
+    }
+    const medforge::geometry::MeshTopology source = medforge::geometry::inspectMesh(surfaceMesh_);
+    const medforge::geometry::MeshTopology back = medforge::geometry::inspectMesh(loaded);
+    const auto near = [](double left, double right) { return std::abs(left - right) < 1e-3; };
+    if (!near(source.boundsMin.x, back.boundsMin.x) || !near(source.boundsMin.y, back.boundsMin.y) ||
+        !near(source.boundsMin.z, back.boundsMin.z) || !near(source.boundsMax.x, back.boundsMax.x) ||
+        !near(source.boundsMax.y, back.boundsMax.y) || !near(source.boundsMax.z, back.boundsMax.z)) {
+        if (error != nullptr) {
+            *error = QStringLiteral("Reimport bounds do not match the source mesh");
+        }
+        return false;
+    }
+    QString notice = QStringLiteral("Exported %1 triangles. STL units are millimeters.")
+                         .arg(source.triangleCount);
+    if (hasVolume_) {
+        notice += QStringLiteral(" Series %1").arg(QString::fromStdString(volume_.seriesInstanceUid));
+    }
+    errorBanner_->setMessage(Banner::Severity::Notice, notice);
+    errorBanner_->setVisible(true);
+    return true;
 }
 
 void WorkspaceWindow::commitMeasures(medforge::geometry::MeasureDocument next) {
