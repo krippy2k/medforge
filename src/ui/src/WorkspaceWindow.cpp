@@ -1,5 +1,6 @@
 #include "medforge/ui/WorkspaceWindow.h"
 
+#include "medforge/core/Coordinates.h"
 #include "medforge/core/Version.h"
 #include "medforge/imaging/CtVolume.h"
 #include "medforge/rendering/TransferFunction.h"
@@ -373,6 +374,36 @@ void WorkspaceWindow::buildMenus() {
             errorBanner_->setVisible(true);
         }
     });
+    auto* importImplantAction = fileMenu->addAction(QStringLiteral("Import &implant..."));
+    importImplantAction->setObjectName(QStringLiteral("importImplantAction"));
+    connect(importImplantAction, &QAction::triggered, this, [this] {
+        const QString path = QFileDialog::getOpenFileName(
+            this, QStringLiteral("Import implant"), QString(),
+            QStringLiteral("STEP or IGES (*.step *.stp *.iges *.igs)"));
+        if (path.isEmpty()) {
+            return;
+        }
+        QString error;
+        if (!importImplantStep(path, &error)) {
+            errorBanner_->setMessage(Banner::Severity::Error, error);
+            errorBanner_->setVisible(true);
+        }
+    });
+    auto* exportPrototypeAction = fileMenu->addAction(QStringLiteral("Export &prototype..."));
+    exportPrototypeAction->setObjectName(QStringLiteral("exportPrototypeAction"));
+    connect(exportPrototypeAction, &QAction::triggered, this, [this] {
+        const QString path = QFileDialog::getSaveFileName(
+            this, QStringLiteral("Export prototype"), QString(),
+            QStringLiteral("STEP or STL (*.step *.stp *.stl)"));
+        if (path.isEmpty()) {
+            return;
+        }
+        QString error;
+        if (!exportPrototype(path, &error)) {
+            errorBanner_->setMessage(Banner::Severity::Error, error);
+            errorBanner_->setVisible(true);
+        }
+    });
     fileMenu->addSeparator();
     auto* quit = fileMenu->addAction(QStringLiteral("&Exit"));
     quit->setShortcut(QKeySequence::Quit);
@@ -596,6 +627,78 @@ void WorkspaceWindow::buildDocks() {
     undoMeshButton->setObjectName(QStringLiteral("undoMesh"));
     auto* redoMeshButton = new QPushButton(QStringLiteral("Redo mesh"), ctProperties_);
     redoMeshButton->setObjectName(QStringLiteral("redoMesh"));
+    implantNotice_ = new QLabel(QStringLiteral("Research prototype. Not for manufacture."),
+                                 ctProperties_);
+    implantNotice_->setObjectName(QStringLiteral("implantNotice"));
+    implantNotice_->setWordWrap(true);
+    implantNotice_->setProperty("mfRole", QStringLiteral("secondary"));
+    implantStatus_ = new QLabel(QStringLiteral("No implant"), ctProperties_);
+    implantStatus_->setObjectName(QStringLiteral("implantStatus"));
+    implantStatus_->setWordWrap(true);
+    guideStatus_ = new QLabel(QStringLiteral("No guide"), ctProperties_);
+    guideStatus_->setObjectName(QStringLiteral("guideStatus"));
+    guideStatus_->setWordWrap(true);
+    guideStatus_->setProperty("mfRole", QStringLiteral("secondary"));
+    auto makePoseEditor = [this](NumericEditor*& editor, const char* name, const QString& label,
+                                 const QString& unit, double minimum, double maximum, int decimals) {
+        editor = new NumericEditor(ctProperties_);
+        editor->setObjectName(QString::fromUtf8(name));
+        editor->setLabel(label);
+        editor->setUnit(unit);
+        editor->setRange(minimum, maximum);
+        editor->setDecimals(decimals);
+        connect(editor, &NumericEditor::valueChanged, this, [this](double) { applyImplantPose(); });
+    };
+    makePoseEditor(implantL_, "implantL", QStringLiteral("L"), QStringLiteral("mm"), -500, 500, 2);
+    makePoseEditor(implantP_, "implantP", QStringLiteral("P"), QStringLiteral("mm"), -500, 500, 2);
+    makePoseEditor(implantS_, "implantS", QStringLiteral("S"), QStringLiteral("mm"), -500, 500, 2);
+    makePoseEditor(implantRx_, "implantRx", QStringLiteral("Rot L"), QStringLiteral("deg"), -180, 180, 1);
+    makePoseEditor(implantRy_, "implantRy", QStringLiteral("Rot P"), QStringLiteral("deg"), -180, 180, 1);
+    makePoseEditor(implantRz_, "implantRz", QStringLiteral("Rot S"), QStringLiteral("deg"), -180, 180, 1);
+    clearanceTolerance_ = new NumericEditor(ctProperties_);
+    clearanceTolerance_->setObjectName(QStringLiteral("clearanceTolerance"));
+    clearanceTolerance_->setLabel(QStringLiteral("Tolerance"));
+    clearanceTolerance_->setUnit(QStringLiteral("mm"));
+    clearanceTolerance_->setRange(0.01, 5);
+    clearanceTolerance_->setDecimals(2);
+    clearanceTolerance_->setValue(0.1);
+    connect(clearanceTolerance_, &NumericEditor::valueChanged, this, [this](double) { refreshCad(); });
+    guideOffset_ = new NumericEditor(ctProperties_);
+    guideOffset_->setObjectName(QStringLiteral("guideOffset"));
+    guideOffset_->setLabel(QStringLiteral("Offset"));
+    guideOffset_->setUnit(QStringLiteral("mm"));
+    guideOffset_->setRange(0.2, 40);
+    guideOffset_->setDecimals(2);
+    guideOffset_->setValue(4);
+    guideHole_ = new NumericEditor(ctProperties_);
+    guideHole_->setObjectName(QStringLiteral("guideHole"));
+    guideHole_->setLabel(QStringLiteral("Hole"));
+    guideHole_->setUnit(QStringLiteral("mm"));
+    guideHole_->setRange(0.4, 30);
+    guideHole_->setDecimals(2);
+    guideHole_->setValue(2);
+    auto* placeCylinderButton = new QPushButton(QStringLiteral("Place cylinder"), ctProperties_);
+    placeCylinderButton->setObjectName(QStringLiteral("placeCylinder"));
+    auto* guideButtons = new QWidget(ctProperties_);
+    auto* guideButtonLayout = new QHBoxLayout(guideButtons);
+    guideButtonLayout->setContentsMargins(0, 0, 0, 0);
+    guideButtonLayout->setSpacing(4);
+    auto* previewGuideButton = new QPushButton(QStringLiteral("Preview"), guideButtons);
+    previewGuideButton->setObjectName(QStringLiteral("previewGuide"));
+    previewGuideButton->setToolTip(QStringLiteral("Preview the guide. It does not replace the implant."));
+    auto* applyGuideButton = new QPushButton(QStringLiteral("Apply"), guideButtons);
+    applyGuideButton->setObjectName(QStringLiteral("applyGuide"));
+    applyGuideButton->setToolTip(QStringLiteral("Apply the guide preview."));
+    auto* revertGuideButton = new QPushButton(QStringLiteral("Revert"), guideButtons);
+    revertGuideButton->setObjectName(QStringLiteral("revertGuide"));
+    revertGuideButton->setToolTip(QStringLiteral("Discard the guide preview and the applied guide."));
+    guideButtonLayout->addWidget(previewGuideButton);
+    guideButtonLayout->addWidget(applyGuideButton);
+    guideButtonLayout->addWidget(revertGuideButton);
+    connect(placeCylinderButton, &QPushButton::clicked, this, [this] { placeCylinderImplant(); });
+    connect(previewGuideButton, &QPushButton::clicked, this, [this] { previewGuide(); });
+    connect(applyGuideButton, &QPushButton::clicked, this, [this] { applyGuide(); });
+    connect(revertGuideButton, &QPushButton::clicked, this, [this] { revertGuide(); });
     auto* repairNote = new QLabel(
         QStringLiteral("Preview does not replace the source mesh. STL units are millimeters."),
         ctProperties_);
@@ -681,6 +784,20 @@ void WorkspaceWindow::buildDocks() {
     ctLayout->addWidget(cancelPreviewButton);
     ctLayout->addWidget(undoMeshButton);
     ctLayout->addWidget(redoMeshButton);
+    ctLayout->addWidget(implantNotice_);
+    ctLayout->addWidget(implantStatus_);
+    ctLayout->addWidget(implantL_);
+    ctLayout->addWidget(implantP_);
+    ctLayout->addWidget(implantS_);
+    ctLayout->addWidget(implantRx_);
+    ctLayout->addWidget(implantRy_);
+    ctLayout->addWidget(implantRz_);
+    ctLayout->addWidget(clearanceTolerance_);
+    ctLayout->addWidget(placeCylinderButton);
+    ctLayout->addWidget(guideOffset_);
+    ctLayout->addWidget(guideHole_);
+    ctLayout->addWidget(guideButtons);
+    ctLayout->addWidget(guideStatus_);
     ctLayout->addWidget(volumeNote);
     ctLayout->addWidget(segmentNote);
     ctLayout->addWidget(segmentTool_);
@@ -1010,6 +1127,8 @@ void WorkspaceWindow::buildViewports() {
     view3dTitle->setMargin(medforge::ui::tokens::space8);
     sampleViewport_ = new SampleViewport(view3d);
     volumeViewport_ = new VolumeViewport(view3d);
+    connect(volumeViewport_, &VolumeViewport::gizmoDragged, this,
+            [this](int axis, double delta) { dragImplantGizmo(axis, delta); });
     volumeViewport_->hide();
     view3dLayout->addWidget(view3dTitle);
     view3dLayout->addWidget(sampleViewport_, 1);
@@ -1277,6 +1396,7 @@ void WorkspaceWindow::clearLoadedSeries() {
         meshDiagnostics_->setText(QStringLiteral("No surface"));
     }
     surfaceRow_->hide();
+    resetCad();
     volumeViewport_->clearStudy();
     showVolumePane(false);
     resetMeasures();
@@ -2445,5 +2565,410 @@ bool WorkspaceWindow::loadMeasures(const QString& path, QString* error) {
     selectedLandmark_ = measures_.landmarks.empty() ? -1 : 0;
     measurePending_.clear();
     refreshMeasures();
+    return true;
+}
+
+bool WorkspaceWindow::anatomyBounds(medforge::core::Vec3* minimum,
+                                    medforge::core::Vec3* maximum) const {
+    if (!hasVolume_ || minimum == nullptr || maximum == nullptr || volume_.columns < 2 ||
+        volume_.rows < 2 || volume_.slices < 2) {
+        return false;
+    }
+    bool first = true;
+    for (const int i : {0, volume_.columns - 1}) {
+        for (const int j : {0, volume_.rows - 1}) {
+            for (const int k : {0, volume_.slices - 1}) {
+                const medforge::core::CoordinateResult point = medforge::core::voxelIndexToPatientLps(
+                    {static_cast<double>(i), static_cast<double>(j), static_cast<double>(k)},
+                    volume_.geometry.geometry);
+                if (!point.ok()) {
+                    return false;
+                }
+                if (first) {
+                    *minimum = point.value;
+                    *maximum = point.value;
+                    first = false;
+                    continue;
+                }
+                minimum->x = std::min(minimum->x, point.value.x);
+                minimum->y = std::min(minimum->y, point.value.y);
+                minimum->z = std::min(minimum->z, point.value.z);
+                maximum->x = std::max(maximum->x, point.value.x);
+                maximum->y = std::max(maximum->y, point.value.y);
+                maximum->z = std::max(maximum->z, point.value.z);
+            }
+        }
+    }
+    return !first && maximum->x > minimum->x && maximum->y > minimum->y && maximum->z > minimum->z;
+}
+
+void WorkspaceWindow::resetCad() {
+    anatomy_ = {};
+    implantBase_ = {};
+    implant_ = {};
+    guidePreviewShape_ = {};
+    guide_ = {};
+    implantPose_ = {};
+    guidePreviewActive_ = false;
+    if (implantStatus_ != nullptr) {
+        implantStatus_->setText(QStringLiteral("No implant"));
+    }
+    if (guideStatus_ != nullptr) {
+        guideStatus_->setText(QStringLiteral("No guide"));
+    }
+    if (volumeViewport_ != nullptr) {
+        volumeViewport_->setCadOverlay({}, {}, {}, false, false);
+    }
+}
+
+medforge::cad::GuideSpec WorkspaceWindow::guideSpec() const {
+    medforge::cad::GuideSpec spec;
+    spec.contactOriginMm = {anatomyMin_.x, anatomyMin_.y, anatomyMax_.z};
+    spec.patchLengthMm = 10;
+    spec.patchWidthMm = 8;
+    spec.offsetMm = guideOffset_ != nullptr ? guideOffset_->value() : 4;
+    spec.holeDiameterMm = guideHole_ != nullptr ? guideHole_->value() : 2;
+    return spec;
+}
+
+void WorkspaceWindow::refreshCad() {
+    const bool overlapPossible = !implant_.isNull() && !anatomy_.isNull() &&
+                                 clearanceTolerance_ != nullptr && clearanceTolerance_->isValid();
+    bool overlap = false;
+    QString status = implant_.isNull() ? QStringLiteral("No implant")
+                                       : QStringLiteral("Implant volume %1 mm³")
+                                             .arg(implant_.volumeMm3(), 0, 'f', 1);
+    if (overlapPossible) {
+        const medforge::cad::Clearance clearance = medforge::cad::measureClearance(
+            implant_, anatomy_, clearanceTolerance_->value());
+        if (clearance.ok) {
+            overlap = clearance.overlap;
+            status = QStringLiteral("%1 mm. Tolerance %2 mm. %3. BRepExtrema.")
+                         .arg(clearance.distanceMm, 0, 'f', 3)
+                         .arg(clearance.toleranceMm, 0, 'f', 3)
+                         .arg(overlap ? QStringLiteral("Overlap") : QStringLiteral("No overlap"));
+            if (implantStatus_ != nullptr) {
+                implantStatus_->setToolTip(QString::fromUtf8(medforge::cad::kClearanceMethod));
+            }
+            if (overlap) {
+                errorBanner_->setMessage(
+                    Banner::Severity::Warning,
+                    QStringLiteral("Implant intersects the anatomy bounds. Clearance is approximate."));
+                errorBanner_->setVisible(true);
+            } else if (errorBanner_->message().contains(QStringLiteral("intersects the anatomy"))) {
+                errorBanner_->setVisible(false);
+            }
+        } else {
+            status = QString::fromStdString(clearance.message);
+        }
+    }
+    if (implantStatus_ != nullptr) {
+        implantStatus_->setText(status);
+    }
+    if (volumeViewport_ == nullptr) {
+        return;
+    }
+    const medforge::cad::Shape& shownGuide = guidePreviewActive_ ? guidePreviewShape_ : guide_;
+    volumeViewport_->setCadOverlay(implant_.mesh(), shownGuide.mesh(), implantPose_.translationMm,
+                                   !implant_.isNull(), overlap);
+}
+
+void WorkspaceWindow::applyImplantPose() {
+    if (updatingPose_ || implantBase_.isNull() || implantL_ == nullptr) {
+        return;
+    }
+    const NumericEditor* editors[] = {implantL_, implantP_, implantS_, implantRx_, implantRy_,
+                                      implantRz_};
+    for (const NumericEditor* editor : editors) {
+        if (editor == nullptr || !editor->isValid()) {
+            return;
+        }
+    }
+    implantPose_.translationMm = {implantL_->value(), implantP_->value(), implantS_->value()};
+    implantPose_.rotationDeg = {implantRx_->value(), implantRy_->value(), implantRz_->value()};
+    std::string error;
+    medforge::cad::Shape next = medforge::cad::transformShape(implantBase_, implantPose_, &error);
+    if (next.isNull()) {
+        errorBanner_->setMessage(Banner::Severity::Error, QString::fromStdString(error));
+        errorBanner_->setVisible(true);
+        return;
+    }
+    implant_ = std::move(next);
+    refreshCad();
+}
+
+bool WorkspaceWindow::placeCylinderImplant() {
+    if (!medforge::cad::available()) {
+        errorBanner_->setMessage(Banner::Severity::Warning,
+                                 QStringLiteral("Open CASCADE 7.9 is not linked."));
+        errorBanner_->setVisible(true);
+        if (implantStatus_ != nullptr) {
+            implantStatus_->setText(QStringLiteral("Open CASCADE is not linked"));
+        }
+        return false;
+    }
+    if (!anatomyBounds(&anatomyMin_, &anatomyMax_)) {
+        errorBanner_->setMessage(Banner::Severity::Warning,
+                                 QStringLiteral("Import a CT series before placing an implant."));
+        errorBanner_->setVisible(true);
+        return false;
+    }
+    std::string error;
+    const medforge::core::Vec3 size{anatomyMax_.x - anatomyMin_.x, anatomyMax_.y - anatomyMin_.y,
+                                    anatomyMax_.z - anatomyMin_.z};
+    anatomy_ = medforge::cad::makeBox(anatomyMin_, size, &error);
+    implantBase_ = medforge::cad::makeCylinder({0, 0, 0}, {0, 0, 1}, 1.5, 8, &error);
+    if (anatomy_.isNull() || implantBase_.isNull()) {
+        errorBanner_->setMessage(Banner::Severity::Error, QString::fromStdString(error));
+        errorBanner_->setVisible(true);
+        return false;
+    }
+    updatingPose_ = true;
+    implantL_->setValue(anatomyMax_.x + 4);
+    implantP_->setValue(anatomyMin_.y);
+    implantS_->setValue(anatomyMin_.z);
+    implantRx_->setValue(0);
+    implantRy_->setValue(0);
+    implantRz_->setValue(0);
+    updatingPose_ = false;
+    applyImplantPose();
+    if (implant_.isNull()) {
+        return false;
+    }
+    if (!errorBanner_->message().contains(QStringLiteral("intersects the anatomy"))) {
+        errorBanner_->setMessage(
+            Banner::Severity::Notice,
+            QStringLiteral("Cylinder implant placed. Drag the 3D axes or edit L, P, and S. "
+                           "Not for manufacture or clinical use."));
+        errorBanner_->setVisible(true);
+    }
+    return true;
+}
+
+bool WorkspaceWindow::importImplantStep(const QString& path, QString* error) {
+    if (!medforge::cad::available()) {
+        if (error != nullptr) {
+            *error = QStringLiteral("Open CASCADE 7.9 is not linked");
+        }
+        return false;
+    }
+    if (!anatomyBounds(&anatomyMin_, &anatomyMax_)) {
+        if (error != nullptr) {
+            *error = QStringLiteral("Import a CT series before importing an implant");
+        }
+        return false;
+    }
+    const QString lower = path.toLower();
+    const bool iges = lower.endsWith(QStringLiteral(".igs")) || lower.endsWith(QStringLiteral(".iges"));
+    std::string local;
+    medforge::cad::Shape loaded = iges ? medforge::cad::readIges(path.toStdString(), &local)
+                                       : medforge::cad::readStep(path.toStdString(), &local);
+    if (!loaded.isValidSolid()) {
+        if (error != nullptr) {
+            *error = QString::fromStdString(local.empty() ? loaded.message() : local);
+        }
+        return false;
+    }
+    if (anatomy_.isNull()) {
+        const medforge::core::Vec3 size{anatomyMax_.x - anatomyMin_.x, anatomyMax_.y - anatomyMin_.y,
+                                        anatomyMax_.z - anatomyMin_.z};
+        anatomy_ = medforge::cad::makeBox(anatomyMin_, size, &local);
+        if (anatomy_.isNull()) {
+            if (error != nullptr) {
+                *error = QString::fromStdString(local);
+            }
+            return false;
+        }
+    }
+    implantBase_ = std::move(loaded);
+    updatingPose_ = true;
+    if (!implantL_->isValid()) {
+        implantL_->setValue(anatomyMax_.x + 4);
+    }
+    if (!implantP_->isValid()) {
+        implantP_->setValue(anatomyMin_.y);
+    }
+    if (!implantS_->isValid()) {
+        implantS_->setValue(anatomyMin_.z);
+    }
+    updatingPose_ = false;
+    applyImplantPose();
+    if (implant_.isNull()) {
+        if (error != nullptr) {
+            *error = QStringLiteral("The implant transform failed");
+        }
+        return false;
+    }
+    errorBanner_->setMessage(
+        Banner::Severity::Notice,
+        QStringLiteral("Imported implant. Research prototype. Not for manufacture or clinical use."));
+    errorBanner_->setVisible(true);
+    return true;
+}
+
+void WorkspaceWindow::dragImplantGizmo(int axis, double deltaMm) {
+    if (implantBase_.isNull() || !std::isfinite(deltaMm)) {
+        return;
+    }
+    NumericEditor* editor = axis == 0 ? implantL_ : axis == 1 ? implantP_ : implantS_;
+    if (editor == nullptr) {
+        return;
+    }
+    updatingPose_ = true;
+    editor->setValue(editor->value() + deltaMm);
+    updatingPose_ = false;
+    applyImplantPose();
+}
+
+QString WorkspaceWindow::implantStatus() const {
+    return implantStatus_ != nullptr ? implantStatus_->text() : QString();
+}
+
+bool WorkspaceWindow::previewGuide() {
+    if (guideOffset_ != nullptr && !guideOffset_->isValid()) {
+        errorBanner_->setMessage(Banner::Severity::Warning, guideOffset_->validationError());
+        errorBanner_->setVisible(true);
+        return false;
+    }
+    if (guideHole_ != nullptr && !guideHole_->isValid()) {
+        errorBanner_->setMessage(Banner::Severity::Warning, guideHole_->validationError());
+        errorBanner_->setVisible(true);
+        return false;
+    }
+    if (!anatomyBounds(&anatomyMin_, &anatomyMax_)) {
+        errorBanner_->setMessage(Banner::Severity::Warning,
+                                 QStringLiteral("Import a CT series before previewing a guide."));
+        errorBanner_->setVisible(true);
+        return false;
+    }
+    if (anatomy_.isNull()) {
+        std::string error;
+        const medforge::core::Vec3 size{anatomyMax_.x - anatomyMin_.x, anatomyMax_.y - anatomyMin_.y,
+                                        anatomyMax_.z - anatomyMin_.z};
+        anatomy_ = medforge::cad::makeBox(anatomyMin_, size, &error);
+        if (anatomy_.isNull()) {
+            errorBanner_->setMessage(Banner::Severity::Error, QString::fromStdString(error));
+            errorBanner_->setVisible(true);
+            return false;
+        }
+    }
+    std::string error;
+    medforge::cad::Shape preview = medforge::cad::buildGuide(guideSpec(), &error);
+    if (!preview.isValidSolid()) {
+        guidePreviewShape_ = {};
+        guidePreviewActive_ = false;
+        if (guideStatus_ != nullptr) {
+            guideStatus_->setText(QString::fromStdString(error));
+        }
+        refreshCad();
+        errorBanner_->setMessage(Banner::Severity::Warning, QString::fromStdString(error));
+        errorBanner_->setVisible(true);
+        return false;
+    }
+    guidePreviewShape_ = std::move(preview);
+    guidePreviewActive_ = true;
+    if (guideStatus_ != nullptr) {
+        guideStatus_->setText(QStringLiteral("Preview — not applied. Volume %1 mm³.")
+                                  .arg(guidePreviewShape_.volumeMm3(), 0, 'f', 2));
+    }
+    refreshCad();
+    return true;
+}
+
+void WorkspaceWindow::applyGuide() {
+    if (!guidePreviewActive_ || !guidePreviewShape_.isValidSolid()) {
+        errorBanner_->setMessage(Banner::Severity::Warning,
+                                 QStringLiteral("Preview a guide before applying it."));
+        errorBanner_->setVisible(true);
+        return;
+    }
+    guide_ = guidePreviewShape_;
+    guidePreviewShape_ = {};
+    guidePreviewActive_ = false;
+    if (guideStatus_ != nullptr) {
+        guideStatus_->setText(
+            QStringLiteral("Applied guide. Volume %1 mm³. Research prototype. Not for manufacture.")
+                .arg(guide_.volumeMm3(), 0, 'f', 2));
+    }
+    refreshCad();
+}
+
+void WorkspaceWindow::revertGuide() {
+    guide_ = {};
+    guidePreviewShape_ = {};
+    guidePreviewActive_ = false;
+    if (guideStatus_ != nullptr) {
+        guideStatus_->setText(QStringLiteral("No guide"));
+    }
+    refreshCad();
+}
+
+bool WorkspaceWindow::guidePreviewActive() const {
+    return guidePreviewActive_;
+}
+
+double WorkspaceWindow::guideVolume() const {
+    if (guidePreviewActive_) {
+        return guidePreviewShape_.volumeMm3();
+    }
+    return guide_.volumeMm3();
+}
+
+QString WorkspaceWindow::guideStatus() const {
+    return guideStatus_ != nullptr ? guideStatus_->text() : QString();
+}
+
+bool WorkspaceWindow::exportPrototype(const QString& path, QString* error) {
+    if (guidePreviewActive_) {
+        if (error != nullptr) {
+            *error = QStringLiteral("Apply or cancel the guide preview before export");
+        }
+        return false;
+    }
+    const medforge::cad::Shape* solid = nullptr;
+    if (guide_.isValidSolid()) {
+        solid = &guide_;
+    } else if (implant_.isValidSolid()) {
+        solid = &implant_;
+    }
+    if (solid != nullptr) {
+        QString output = path;
+        if (output.endsWith(QStringLiteral(".stl"), Qt::CaseInsensitive)) {
+            output.chop(4);
+            output += QStringLiteral(".step");
+        }
+        std::string local;
+        if (!medforge::cad::writeStep(*solid, output.toStdString(), &local)) {
+            if (error != nullptr) {
+                *error = QString::fromStdString(local);
+            }
+            return false;
+        }
+        errorBanner_->setMessage(
+            Banner::Severity::Success,
+            QStringLiteral("Exported STEP. Research prototype. Not for manufacture or clinical use."));
+        errorBanner_->setVisible(true);
+        return true;
+    }
+    if (!hasSurface_ || surfaceMesh_.indices.size() < 3) {
+        if (error != nullptr) {
+            *error = QStringLiteral("Place an implant or build a surface before exporting a prototype");
+        }
+        return false;
+    }
+    std::string local;
+    const char* header = "MedForge STL millimeters. Research prototype. Not for manufacture.";
+    if (!medforge::geometry::writeBinaryStl(surfaceMesh_, std::filesystem::path(path.toStdString()),
+                                            &local, header)) {
+        if (error != nullptr) {
+            *error = QString::fromStdString(local);
+        }
+        return false;
+    }
+    errorBanner_->setMessage(
+        Banner::Severity::Warning,
+        QStringLiteral("Exported STL because this mesh is not a valid B-Rep. A triangle mesh is not "
+                       "an exact STEP. Not for manufacture or clinical use."));
+    errorBanner_->setVisible(true);
     return true;
 }

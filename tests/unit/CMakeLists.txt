@@ -54,6 +54,10 @@ medforge_add_test(geometry_mesh_process_test
     SOURCES geometry/MeshProcessTest.cpp
     LIBS medforge::geometry
 )
+medforge_add_test(cad_kernel_test
+    SOURCES cad/KernelTest.cpp
+    LIBS medforge::cad
+)
 
 medforge_add_test(core_modules_test
     SOURCES core/ModulesTest.cpp
@@ -106,6 +110,10 @@ medforge_add_test(ui_measurement_workspace_test
 )
 medforge_add_test(ui_mesh_workspace_test
     SOURCES ui/MeshWorkspaceTest.cpp
+    LIBS medforge::ui
+)
+medforge_add_test(ui_implant_workspace_test
+    SOURCES ui/ImplantWorkspaceTest.cpp
     LIBS medforge::ui
 )
 medforge_add_test(ui_workspace_window_test

@@ -19,7 +19,7 @@ These are recorded in `dependencies/versions.lock.json` and are not fetched or c
 | VTK 9.4 | M1 rendering | BSD-3-Clause |
 | DCMTK 3.6.9 | M2 DICOM import, if selected | BSD-3-Clause |
 | ITK 5.4 | M4 segmentation | Apache-2.0 |
-| Open CASCADE 7.9 | M7 CAD kernel, behind the `cad` adapter | LGPL-2.1 |
+| Open CASCADE 7.9.3 | M7 CAD kernel, behind the `cad` adapter. Local debug kit: `third_party/dist/occt-7.9.3-windows-msvc-debug` | LGPL-2.1 |
 | CGAL | M6 only if required | GPL-3.0 or commercial; do not add casually |
 
 No patient data, paid assets, or clinical datasets are included.

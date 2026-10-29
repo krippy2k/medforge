@@ -1,5 +1,6 @@
 #pragma once
 
+#include "medforge/cad/Kernel.h"
 #include "medforge/core/CommandHistory.h"
 #include "medforge/geometry/Measure.h"
 #include "medforge/geometry/MeshProcess.h"
@@ -90,6 +91,17 @@ public:
     void undoMesh();
     void redoMesh();
     bool exportBinaryStl(const QString& path, QString* error);
+    bool placeCylinderImplant();
+    bool importImplantStep(const QString& path, QString* error);
+    void dragImplantGizmo(int axis, double deltaMm);
+    QString implantStatus() const;
+    bool previewGuide();
+    void applyGuide();
+    void revertGuide();
+    bool guidePreviewActive() const;
+    double guideVolume() const;
+    QString guideStatus() const;
+    bool exportPrototype(const QString& path, QString* error);
     bool meshPreviewActive() const;
     int committedTriangleCount() const;
     QString meshDiagnostics() const;
@@ -124,6 +136,11 @@ private:
     void refreshMeasures();
     void resetMeasures();
     void resetMeshEdits();
+    void resetCad();
+    void refreshCad();
+    void applyImplantPose();
+    bool anatomyBounds(medforge::core::Vec3* minimum, medforge::core::Vec3* maximum) const;
+    medforge::cad::GuideSpec guideSpec() const;
     void shutdownMeshEdit();
     void applyMeshEditResult(int generation, medforge::geometry::MeshEditResult result);
     void updateMeasureOverlays();
@@ -179,6 +196,28 @@ private:
     medforge::geometry::TriangleMesh meshPreview_;
     bool meshPreviewActive_ = false;
     medforge::core::CommandHistory meshHistory_;
+    QLabel* implantNotice_ = nullptr;
+    QLabel* implantStatus_ = nullptr;
+    QLabel* guideStatus_ = nullptr;
+    NumericEditor* implantL_ = nullptr;
+    NumericEditor* implantP_ = nullptr;
+    NumericEditor* implantS_ = nullptr;
+    NumericEditor* implantRx_ = nullptr;
+    NumericEditor* implantRy_ = nullptr;
+    NumericEditor* implantRz_ = nullptr;
+    NumericEditor* clearanceTolerance_ = nullptr;
+    NumericEditor* guideOffset_ = nullptr;
+    NumericEditor* guideHole_ = nullptr;
+    medforge::cad::Shape anatomy_;
+    medforge::cad::Shape implantBase_;
+    medforge::cad::Shape implant_;
+    medforge::cad::Shape guidePreviewShape_;
+    medforge::cad::Shape guide_;
+    medforge::cad::Pose implantPose_{};
+    medforge::core::Vec3 anatomyMin_{};
+    medforge::core::Vec3 anatomyMax_{};
+    bool updatingPose_ = false;
+    bool guidePreviewActive_ = false;
     BrowserRow* surfaceRow_ = nullptr;
     BrowserRow* segmentRow_ = nullptr;
     SegmentedControl* segmentTool_ = nullptr;

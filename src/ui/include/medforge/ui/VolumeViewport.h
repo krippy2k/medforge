@@ -5,8 +5,13 @@
 #include "medforge/rendering/CameraPose.h"
 #include "medforge/rendering/TransferFunction.h"
 
+#include <QColor>
+#include <QPoint>
 #include <QString>
 #include <QWidget>
+
+class QMouseEvent;
+class QPainter;
 #include <memory>
 #include <vector>
 
@@ -28,6 +33,15 @@ public:
     void setVolumeVisible(bool visible);
     void setMesh(const medforge::geometry::TriangleMesh& mesh);
     void clearMesh();
+    void setCadOverlay(const medforge::geometry::TriangleMesh& implant,
+                       const medforge::geometry::TriangleMesh& guide,
+                       const medforge::core::Vec3& origin,
+                       bool gizmo,
+                       bool overlap);
+    QPoint gizmoAnchor() const;
+    QPoint gizmoTip(int axis) const;
+    int gizmoAxisAt(const QPoint& point) const;
+    double gizmoMillimeters(int axis, const QPoint& from, const QPoint& to) const;
     void setLandmarks(const std::vector<medforge::core::Vec3>& positions, int selected);
     void setClipPlane(bool enabled,
                       const medforge::core::Vec3& origin,
@@ -44,9 +58,15 @@ public:
     int meshTriangleCount() const;
     bool meshBounds(medforge::core::Vec3* minimum, medforge::core::Vec3* maximum) const;
 
+signals:
+    void gizmoDragged(int axis, double deltaMm);
+
 protected:
     void paintEvent(QPaintEvent* event) override;
     void showEvent(QShowEvent* event) override;
+    void mousePressEvent(QMouseEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
+    void mouseReleaseEvent(QMouseEvent* event) override;
 
 private:
     struct Scene;
@@ -56,13 +76,26 @@ private:
     void pushTransfer();
     void pushClip();
     void rebuildMeshActor();
+    void rebuildCadActors();
     void rebuildLandmarks();
+    void paintTriangles(QPainter& painter,
+                        const medforge::geometry::TriangleMesh& mesh,
+                        const QColor& color,
+                        const QRect& bounds) const;
     QPointF project(const medforge::core::Vec3& point, const QRect& bounds) const;
+    medforge::core::Vec3 gizmoTipPoint(int axis) const;
 
     std::unique_ptr<Scene> scene_;
     medforge::rendering::CameraPose pose_ = medforge::rendering::homeCamera();
     medforge::rendering::TransferFunction transfer_ = medforge::rendering::softTissueTransfer();
     medforge::geometry::TriangleMesh mesh_;
+    medforge::geometry::TriangleMesh implantMesh_;
+    medforge::geometry::TriangleMesh guideMesh_;
+    medforge::core::Vec3 gizmoOrigin_{};
+    bool gizmoVisible_ = false;
+    bool implantOverlaps_ = false;
+    int dragAxis_ = -1;
+    QPoint dragLast_{};
     std::vector<medforge::core::Vec3> landmarks_;
     int selectedLandmark_ = -1;
     medforge::core::VoxelGridGeometry grid_{};

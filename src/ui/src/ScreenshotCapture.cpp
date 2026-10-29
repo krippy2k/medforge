@@ -719,6 +719,66 @@ bool saveSegmentStates(const QString& directory,
                       [&missed] { revealSegmentControls(missed); });
 }
 
+void revealImplantControls(WorkspaceWindow& window) {
+    auto* scroll = window.findChild<QScrollArea*>(QStringLiteral("propertiesScroll"));
+    auto* anchor = window.findChild<QWidget*>(QStringLiteral("implantNotice"));
+    if (scroll == nullptr || anchor == nullptr || scroll->widget() == nullptr) {
+        return;
+    }
+    const QPoint top = anchor->mapTo(scroll->widget(), QPoint(0, 0));
+    scroll->verticalScrollBar()->setValue(top.y());
+}
+
+bool saveImplantStates(const QString& directory, int percent, QString* error, QTextStream& manifest) {
+    const std::filesystem::path phantom =
+        std::filesystem::temp_directory_path() / "medforge-m7-capture-phantom";
+    std::string phantomError;
+    if (!medforge::imaging::phantom::writeSyntheticAxialSeries(phantom, &phantomError)) {
+        if (error != nullptr) {
+            *error = QString::fromStdString(phantomError);
+        }
+        return false;
+    }
+    const QString layout = QDir::temp().filePath(QStringLiteral("medforge-m7-capture-layout.ini"));
+    QFile::remove(layout);
+    WorkspaceWindow window(layout);
+    window.importFolder(QString::fromStdString(phantom.string()));
+    if (!waitForPhase(window, WorkspaceActions::Phase::Study, 5000)) {
+        if (error != nullptr) {
+            *error = QStringLiteral("Implant capture import did not finish.");
+        }
+        return false;
+    }
+    window.placeCylinderImplant();
+    const QList<QSize> sizes = {QSize(1280, 800), QSize(1920, 1080), QSize(2560, 1440)};
+    for (const QSize& size : sizes) {
+        const QString path = QDir(directory).filePath(
+            QStringLiteral("implant-pose-%1x%2-scale%3.png").arg(size.width()).arg(size.height()).arg(percent));
+        if (!saveWidget(window, size, path, error, manifest, [&window] { revealImplantControls(window); })) {
+            return false;
+        }
+    }
+    window.previewGuide();
+    if (!saveWidget(window,
+                    QSize(1280, 800),
+                    QDir(directory).filePath(QStringLiteral("implant-guide-1280x800-scale%1.png").arg(percent)),
+                    error,
+                    manifest,
+                    [&window] { revealImplantControls(window); })) {
+        return false;
+    }
+    auto* alongL = window.findChild<NumericEditor*>(QStringLiteral("implantL"));
+    if (alongL != nullptr) {
+        alongL->setValue(alongL->value() - 8);
+    }
+    return saveWidget(window,
+                      QSize(1280, 800),
+                      QDir(directory).filePath(QStringLiteral("implant-overlap-1280x800-scale%1.png").arg(percent)),
+                      error,
+                      manifest,
+                      [&window] { revealImplantControls(window); });
+}
+
 } // namespace
 
 bool captureUiEvidence(const QString& directory, QString* error) {
@@ -778,7 +838,8 @@ bool captureUiEvidence(const QString& directory, QString* error) {
            saveVolumeStates(directory, percent, error, manifest) &&
            saveSegmentStates(directory, percent, error, manifest) &&
            saveMeasureStates(directory, percent, error, manifest) &&
-           saveMeshRepairStates(directory, percent, error, manifest);
+           saveMeshRepairStates(directory, percent, error, manifest) &&
+           saveImplantStates(directory, percent, error, manifest);
 }
 
 } // namespace medforge::ui

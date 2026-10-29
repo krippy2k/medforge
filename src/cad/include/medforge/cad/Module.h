@@ -2,7 +2,7 @@
 
 namespace medforge::cad {
 
-// CAD kernel adapters stay behind this module. Open CASCADE is not linked in M0.
+// CAD kernel adapters stay behind this module. Open CASCADE types do not leave it.
 const char* moduleName();
 
 } // namespace medforge::cad

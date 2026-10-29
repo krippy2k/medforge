@@ -45,7 +45,8 @@ MeshEditResult fillSmallHoles(const TriangleMesh& mesh,
 
 bool writeBinaryStl(const TriangleMesh& mesh,
                     const std::filesystem::path& path,
-                    std::string* error);
+                    std::string* error,
+                    const char* headerLabel = nullptr);
 
 bool readBinaryStl(const std::filesystem::path& path, TriangleMesh* mesh, std::string* error);
 

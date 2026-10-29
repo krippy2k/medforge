@@ -26,7 +26,7 @@ void ModulesTest::researchNoticeIsVisibleText() {
     const QString notice = QString::fromUtf8(medforge::core::kResearchNotice);
     QVERIFY(notice.contains(QStringLiteral("not for clinical use")));
     QCOMPARE(QString::fromUtf8(medforge::core::kVersionString), QStringLiteral("0.1.0"));
-    QCOMPARE(QString::fromUtf8(medforge::core::kMilestone), QStringLiteral("M6"));
+    QCOMPARE(QString::fromUtf8(medforge::core::kMilestone), QStringLiteral("M7"));
 }
 
 QTEST_APPLESS_MAIN(ModulesTest)

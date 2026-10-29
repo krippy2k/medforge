@@ -13,6 +13,10 @@ if (-not (Test-Path $exe)) {
 }
 
 $env:PATH = "C:\Qt\6.12.0\msvc2022_64\bin;" + $env:PATH
+$occtBin = Join-Path (Split-Path $PSScriptRoot -Parent) "third_party\dist\occt-7.9.3-windows-msvc-debug\win64\vc14\bind"
+if (Test-Path $occtBin) {
+    $env:PATH = "$occtBin;" + $env:PATH
+}
 $env:QT_QPA_PLATFORM = "offscreen"
 $env:QT_QPA_FONTDIR = "C:\Windows\Fonts"
 $env:QT_ASSUME_STDERR_HAS_CONSOLE = "1"

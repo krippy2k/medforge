@@ -452,7 +452,10 @@ MeshEditResult fillSmallHoles(const TriangleMesh& mesh,
     return result;
 }
 
-bool writeBinaryStl(const TriangleMesh& mesh, const std::filesystem::path& path, std::string* error) {
+bool writeBinaryStl(const TriangleMesh& mesh,
+                    const std::filesystem::path& path,
+                    std::string* error,
+                    const char* headerLabel) {
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
     if (!out) {
         if (error != nullptr) {
@@ -461,8 +464,10 @@ bool writeBinaryStl(const TriangleMesh& mesh, const std::filesystem::path& path,
         return false;
     }
     char header[80] = {};
-    const char label[] = "MedForge binary STL, units millimeters";
-    std::memcpy(header, label, sizeof(label) - 1);
+    const char fallback[] = "MedForge binary STL, units millimeters";
+    const char* label = headerLabel != nullptr && headerLabel[0] != '\0' ? headerLabel : fallback;
+    const std::size_t labelLength = std::min<std::size_t>(std::strlen(label), 79);
+    std::memcpy(header, label, labelLength);
     out.write(header, 80);
     const auto count = static_cast<std::uint32_t>(mesh.indices.size() / 3);
     out.write(reinterpret_cast<const char*>(&count), sizeof(count));

@@ -5,6 +5,7 @@
 #include "medforge/ui/DesignTokens.h"
 #include "medforge/ui/GuiThread.h"
 
+#include <QMouseEvent>
 #include <QPaintEvent>
 #include <QPainter>
 #include <QShowEvent>
@@ -35,6 +36,7 @@ VTK_AUTOINIT_DECLARE(vtkInteractionStyle)
 #include <vtkPointData.h>
 #include <vtkPoints.h>
 #include <vtkPolyData.h>
+#include <vtkLineSource.h>
 #include <vtkPolyDataMapper.h>
 #include <vtkProperty.h>
 #include <vtkSphereSource.h>
@@ -66,6 +68,9 @@ struct VolumeViewport::Scene {
     vtkSmartPointer<vtkImageData> image;
     vtkSmartPointer<vtkVolume> volume;
     vtkSmartPointer<vtkActor> meshActor;
+    vtkSmartPointer<vtkActor> implantActor;
+    vtkSmartPointer<vtkActor> guideActor;
+    std::vector<vtkSmartPointer<vtkActor>> gizmoActors;
     std::vector<vtkSmartPointer<vtkActor>> landmarkActors;
     vtkSmartPointer<vtkPlane> clip;
     vtkSmartPointer<vtkVolumeMapper> mapper;
@@ -143,6 +148,12 @@ void VolumeViewport::clearStudy() {
     rows_ = 0;
     slices_ = 0;
     clearMesh();
+    implantMesh_ = {};
+    guideMesh_ = {};
+    gizmoVisible_ = false;
+    implantOverlaps_ = false;
+    dragAxis_ = -1;
+    rebuildCadActors();
 #ifdef MEDFORGE_HAS_VTK
     if (scene_->renderer != nullptr && scene_->volume != nullptr) {
         scene_->renderer->RemoveVolume(scene_->volume);
@@ -260,6 +271,129 @@ void VolumeViewport::clearMesh() {
     mesh_ = {};
     rebuildMeshActor();
     update();
+}
+
+#ifdef MEDFORGE_HAS_VTK
+namespace {
+
+vtkSmartPointer<vtkActor> actorFromMesh(const medforge::geometry::TriangleMesh& mesh,
+                                        double red,
+                                        double green,
+                                        double blue) {
+    if (mesh.positions.empty() || mesh.indices.size() < 3) {
+        return {};
+    }
+    vtkNew<vtkPoints> points;
+    points->SetNumberOfPoints(static_cast<vtkIdType>(mesh.positions.size()));
+    for (std::size_t index = 0; index < mesh.positions.size(); ++index) {
+        const medforge::core::Vec3& position = mesh.positions[index];
+        points->SetPoint(static_cast<vtkIdType>(index), position.x, position.y, position.z);
+    }
+    vtkNew<vtkCellArray> triangles;
+    for (std::size_t index = 0; index + 2 < mesh.indices.size(); index += 3) {
+        vtkIdType ids[3] = {static_cast<vtkIdType>(mesh.indices[index]),
+                            static_cast<vtkIdType>(mesh.indices[index + 1]),
+                            static_cast<vtkIdType>(mesh.indices[index + 2])};
+        triangles->InsertNextCell(3, ids);
+    }
+    vtkNew<vtkPolyData> poly;
+    poly->SetPoints(points);
+    poly->SetPolys(triangles);
+    vtkNew<vtkPolyDataMapper> mapper;
+    mapper->SetInputData(poly);
+    mapper->ScalarVisibilityOff();
+    auto actor = vtkSmartPointer<vtkActor>::New();
+    actor->SetMapper(mapper);
+    actor->GetProperty()->SetColor(red, green, blue);
+    actor->GetProperty()->SetAmbient(0.35);
+    actor->GetProperty()->SetDiffuse(0.65);
+    return actor;
+}
+
+} // namespace
+#endif
+
+void VolumeViewport::setCadOverlay(const medforge::geometry::TriangleMesh& implant,
+                                   const medforge::geometry::TriangleMesh& guide,
+                                   const medforge::core::Vec3& origin,
+                                   bool gizmo,
+                                   bool overlap) {
+    implantMesh_ = implant;
+    guideMesh_ = guide;
+    gizmoOrigin_ = origin;
+    gizmoVisible_ = gizmo;
+    implantOverlaps_ = overlap;
+    rebuildCadActors();
+    update();
+}
+
+medforge::core::Vec3 VolumeViewport::gizmoTipPoint(int axis) const {
+    medforge::core::Vec3 tip = gizmoOrigin_;
+    constexpr double length = 12;
+    if (axis == 0) {
+        tip.x += length;
+    } else if (axis == 1) {
+        tip.y += length;
+    } else if (axis == 2) {
+        tip.z += length;
+    }
+    return tip;
+}
+
+QPoint VolumeViewport::gizmoAnchor() const {
+    const QRect bounds = rect().adjusted(12, 12, -12, -28);
+    return project(gizmoOrigin_, bounds).toPoint();
+}
+
+QPoint VolumeViewport::gizmoTip(int axis) const {
+    const QRect bounds = rect().adjusted(12, 12, -12, -28);
+    return project(gizmoTipPoint(axis), bounds).toPoint();
+}
+
+int VolumeViewport::gizmoAxisAt(const QPoint& point) const {
+    if (!gizmoVisible_) {
+        return -1;
+    }
+    const QRect bounds = rect().adjusted(12, 12, -12, -28);
+    const QPointF origin = project(gizmoOrigin_, bounds);
+    int best = -1;
+    double bestDistance = 8;
+    for (int axis = 0; axis < 3; ++axis) {
+        const QPointF tip = project(gizmoTipPoint(axis), bounds);
+        const QPointF span = tip - origin;
+        const double spanLength = std::hypot(span.x(), span.y());
+        if (spanLength < 4) {
+            continue;
+        }
+        const double lengthSquared = (span.x() * span.x()) + (span.y() * span.y());
+        double along = ((point.x() - origin.x()) * span.x() + (point.y() - origin.y()) * span.y()) /
+                       lengthSquared;
+        along = std::clamp(along, 0.0, 1.0);
+        const QPointF closest(origin.x() + (span.x() * along), origin.y() + (span.y() * along));
+        const double distance = std::hypot(point.x() - closest.x(), point.y() - closest.y());
+        if (distance <= bestDistance) {
+            bestDistance = distance;
+            best = axis;
+        }
+    }
+    return best;
+}
+
+double VolumeViewport::gizmoMillimeters(int axis, const QPoint& from, const QPoint& to) const {
+    if (axis < 0 || axis > 2) {
+        return 0;
+    }
+    const QRect bounds = rect().adjusted(12, 12, -12, -28);
+    const QPointF origin = project(gizmoOrigin_, bounds);
+    const QPointF tip = project(gizmoTipPoint(axis), bounds);
+    const QPointF span = tip - origin;
+    const double spanLength = std::hypot(span.x(), span.y());
+    if (spanLength < 1) {
+        return 0;
+    }
+    const double pixels =
+        ((to.x() - from.x()) * span.x() + (to.y() - from.y()) * span.y()) / spanLength;
+    return pixels / spanLength * 12.0;
 }
 
 void VolumeViewport::setLandmarks(const std::vector<medforge::core::Vec3>& positions, int selected) {
@@ -457,6 +591,58 @@ void VolumeViewport::pushClip() {
 #endif
 }
 
+void VolumeViewport::rebuildCadActors() {
+#ifdef MEDFORGE_HAS_VTK
+    if (scene_->renderer == nullptr) {
+        return;
+    }
+    if (scene_->implantActor != nullptr) {
+        scene_->renderer->RemoveActor(scene_->implantActor);
+        scene_->implantActor = nullptr;
+    }
+    if (scene_->guideActor != nullptr) {
+        scene_->renderer->RemoveActor(scene_->guideActor);
+        scene_->guideActor = nullptr;
+    }
+    for (const auto& actor : scene_->gizmoActors) {
+        scene_->renderer->RemoveActor(actor);
+    }
+    scene_->gizmoActors.clear();
+    const double red = implantOverlaps_ ? 0.77 : 0.91;
+    const double green = implantOverlaps_ ? 0.36 : 0.66;
+    const double blue = implantOverlaps_ ? 0.29 : 0.38;
+    scene_->implantActor = actorFromMesh(implantMesh_, red, green, blue);
+    if (scene_->implantActor != nullptr) {
+        scene_->renderer->AddActor(scene_->implantActor);
+    }
+    scene_->guideActor = actorFromMesh(guideMesh_, 0.49, 0.66, 0.73);
+    if (scene_->guideActor != nullptr) {
+        scene_->renderer->AddActor(scene_->guideActor);
+    }
+    if (gizmoVisible_) {
+        const QColor colors[3] = {QColor(196, 72, 64), QColor(64, 150, 96), QColor(64, 112, 196)};
+        for (int axis = 0; axis < 3; ++axis) {
+            const medforge::core::Vec3 tip = gizmoTipPoint(axis);
+            vtkNew<vtkLineSource> line;
+            line->SetPoint1(gizmoOrigin_.x, gizmoOrigin_.y, gizmoOrigin_.z);
+            line->SetPoint2(tip.x, tip.y, tip.z);
+            vtkNew<vtkPolyDataMapper> mapper;
+            mapper->SetInputConnection(line->GetOutputPort());
+            auto actor = vtkSmartPointer<vtkActor>::New();
+            actor->SetMapper(mapper);
+            actor->GetProperty()->SetLineWidth(3);
+            actor->GetProperty()->SetColor(colors[axis].redF(), colors[axis].greenF(),
+                                           colors[axis].blueF());
+            scene_->renderer->AddActor(actor);
+            scene_->gizmoActors.push_back(actor);
+        }
+    }
+    if (glWidget_ != nullptr) {
+        glWidget_->update();
+    }
+#endif
+}
+
 void VolumeViewport::rebuildMeshActor() {
 #ifdef MEDFORGE_HAS_VTK
     if (scene_->renderer == nullptr) {
@@ -535,6 +721,64 @@ QPointF VolumeViewport::project(const medforge::core::Vec3& point, const QRect& 
     return QPointF(bounds.center().x() + (x * scale), bounds.center().y() - (y * scale));
 }
 
+void VolumeViewport::paintTriangles(QPainter& painter,
+                                   const medforge::geometry::TriangleMesh& mesh,
+                                   const QColor& color,
+                                   const QRect& bounds) const {
+    if (mesh.indices.size() < 3) {
+        return;
+    }
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(color);
+    const std::size_t triangles = std::min<std::size_t>(mesh.indices.size() / 3, 4000);
+    for (std::size_t index = 0; index < triangles; ++index) {
+        const std::uint32_t v0 = mesh.indices[index * 3];
+        const std::uint32_t v1 = mesh.indices[index * 3 + 1];
+        const std::uint32_t v2 = mesh.indices[index * 3 + 2];
+        if (v0 >= mesh.positions.size() || v1 >= mesh.positions.size() ||
+            v2 >= mesh.positions.size()) {
+            continue;
+        }
+        const QPointF projected[3] = {project(mesh.positions[v0], bounds),
+                                      project(mesh.positions[v1], bounds),
+                                      project(mesh.positions[v2], bounds)};
+        painter.drawPolygon(projected, 3);
+    }
+}
+
+void VolumeViewport::mousePressEvent(QMouseEvent* event) {
+    dragAxis_ = gizmoAxisAt(event->position().toPoint());
+    if (dragAxis_ < 0) {
+        QWidget::mousePressEvent(event);
+        return;
+    }
+    dragLast_ = event->position().toPoint();
+    event->accept();
+}
+
+void VolumeViewport::mouseMoveEvent(QMouseEvent* event) {
+    if (dragAxis_ < 0) {
+        QWidget::mouseMoveEvent(event);
+        return;
+    }
+    const QPoint next = event->position().toPoint();
+    const double delta = gizmoMillimeters(dragAxis_, dragLast_, next);
+    dragLast_ = next;
+    if (std::abs(delta) > 1e-6) {
+        emit gizmoDragged(dragAxis_, delta);
+    }
+    event->accept();
+}
+
+void VolumeViewport::mouseReleaseEvent(QMouseEvent* event) {
+    if (dragAxis_ < 0) {
+        QWidget::mouseReleaseEvent(event);
+        return;
+    }
+    dragAxis_ = -1;
+    event->accept();
+}
+
 void VolumeViewport::paintEvent(QPaintEvent* event) {
     Q_UNUSED(event);
     if (glWidget_ != nullptr) {
@@ -563,22 +807,18 @@ void VolumeViewport::paintEvent(QPaintEvent* event) {
     for (const auto& edge : edges) {
         painter.drawLine(project(corners[edge[0]], bounds), project(corners[edge[1]], bounds));
     }
-    if (mesh_.indices.size() >= 3) {
-        painter.setPen(Qt::NoPen);
-        painter.setBrush(QColor(242, 235, 218, 180));
-        const std::size_t triangles = std::min<std::size_t>(mesh_.indices.size() / 3, 4000);
-        for (std::size_t index = 0; index < triangles; ++index) {
-            const std::uint32_t v0 = mesh_.indices[index * 3];
-            const std::uint32_t v1 = mesh_.indices[index * 3 + 1];
-            const std::uint32_t v2 = mesh_.indices[index * 3 + 2];
-            if (v0 >= mesh_.positions.size() || v1 >= mesh_.positions.size() ||
-                v2 >= mesh_.positions.size()) {
-                continue;
-            }
-            const QPointF projected[3] = {project(mesh_.positions[v0], bounds),
-                                          project(mesh_.positions[v1], bounds),
-                                          project(mesh_.positions[v2], bounds)};
-            painter.drawPolygon(projected, 3);
+    paintTriangles(painter, mesh_, QColor(242, 235, 218, 180), bounds);
+    paintTriangles(painter, guideMesh_, QColor(126, 168, 186, 200), bounds);
+    paintTriangles(painter,
+                   implantMesh_,
+                   implantOverlaps_ ? QColor(196, 92, 74, 210) : QColor(232, 168, 96, 210),
+                   bounds);
+    if (gizmoVisible_) {
+        const QColor axisColors[3] = {QColor(196, 72, 64), QColor(64, 150, 96), QColor(64, 112, 196)};
+        const QPointF origin = project(gizmoOrigin_, bounds);
+        for (int axis = 0; axis < 3; ++axis) {
+            painter.setPen(QPen(axisColors[axis], 2));
+            painter.drawLine(origin, project(gizmoTipPoint(axis), bounds));
         }
     }
     for (std::size_t index = 0; index < landmarks_.size(); ++index) {

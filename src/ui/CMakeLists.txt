@@ -31,7 +31,7 @@ add_library(medforge_ui STATIC
 add_library(medforge::ui ALIAS medforge_ui)
 
 target_include_directories(medforge_ui PUBLIC include)
-target_link_libraries(medforge_ui PUBLIC medforge::core medforge::imaging medforge::rendering Qt6::Widgets)
+target_link_libraries(medforge_ui PUBLIC medforge::core medforge::imaging medforge::cad medforge::rendering Qt6::Widgets)
 target_compile_features(medforge_ui PUBLIC cxx_std_20)
 medforge_set_warnings(medforge_ui)
 
